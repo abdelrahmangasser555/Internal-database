@@ -1,0 +1,47 @@
+{
+  "name": "backup-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local MongoDB backup scheduler, Compass-style browser, and password rotation",
+  "scripts": {
+    "prestart": "node scripts/ensure-ui.js",
+    "start": "node src/index.js",
+    "worker": "node src/worker.js",
+    "dev": "concurrently -k -n api,ui -c cyan,magenta \"node --watch src/index.js\" \"node scripts/build-ui.js --watch\"",
+    "build:ui": "node scripts/build-ui.js",
+    "install:service": "node scripts/install-service.js",
+    "uninstall:service": "node scripts/uninstall-service.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ses": "^3.922.0",
+    "@xyflow/react": "^13.0.3",
+    "archiver": "^7.0.1",
+    "bcryptjs": "^3.0.2",
+    "bson": "^6.10.4",
+    "clsx": "^2.1.1",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "framer-motion": "^14.14.0",
+    "lucide-react": "^1.80.0",
+    "mongodb": "^6.21.0",
+    "node-cron": "^4.2.1",
+    "open": "^10.2.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.7",
+    "sonner": "^2.0.8",
+    "unzipper": "^0.12.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^10.0.7",
+    "cross-env": "^10.1.0",
+    "tailwindcss": "^4.3.5",
+    "vite": "^6.4.1"
+  }
+}

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Backup Service</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="leaf" aria-hidden="true"></span>
+          <div>
+            <div class="brand-name">Backup Service</div>
+            <div class="brand-sub" id="device-label">this device</div>
+          </div>
+        </div>
+        <button class="btn btn-green" id="btn-new-connection">New connection</button>
+        <div class="nav-label">Connections</div>
+        <div class="tree" id="connection-tree"></div>
+        <div class="sidebar-footer">
+          <button class="linkish" data-view="backups">Backups</button>
+          <button class="linkish" data-view="rotate">Password rotate</button>
+          <button class="linkish" data-view="settings">Settings</button>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div class="crumbs" id="crumbs">Select a connection</div>
+          <div class="top-actions" id="top-actions"></div>
+        </header>
+        <section class="workspace" id="workspace"></section>
+      </main>
+    </div>
+    <div id="modal-root"></div>
+    <div id="toast-root"></div>
+    <script src="/js/api.js"></script>
+    <script src="/js/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,119 @@
+@import "@xyflow/react/dist/style.css";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  background: #061018;
+  color: #eef8f2;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(0, 237, 100, 0.28);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(138, 163, 173, 0.28);
+  border-radius: 99px;
+}
+
+.mesh {
+  background:
+    radial-gradient(900px 420px at 12% -10%, rgba(0, 237, 100, 0.16), transparent 55%),
+    radial-gradient(700px 380px at 100% 0%, rgba(125, 211, 252, 0.1), transparent 50%),
+    linear-gradient(180deg, #07141c 0%, #061018 100%);
+}
+
+.glass {
+  background: rgba(16, 32, 41, 0.92);
+  border: 1px solid rgba(148, 178, 188, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(3px);
+}
+
+.sheet-panel {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: min(100vw, 32rem);
+  background: #0d1c24;
+  border-left: 1px solid rgba(148, 178, 188, 0.16);
+  box-shadow: -24px 0 80px rgba(0, 0, 0, 0.5);
+}
+
+.sheet-panel.wide {
+  width: min(100vw, 44rem);
+}
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.confirm-card {
+  width: min(100%, 28rem);
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 178, 188, 0.16);
+  background: #102029;
+  padding: 1.25rem;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-node-border-radius: 16px;
+}
+
+.react-flow__attribution {
+  display: none;
+}
+
+.react-flow__controls {
+  box-shadow: none !important;
+  border: 1px solid rgba(148, 178, 188, 0.16);
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.react-flow__controls-button {
+  background: #12222c !important;
+  border-bottom: 1px solid rgba(148, 178, 188, 0.16) !important;
+  fill: #cfe4dc !important;
+}
+
+.react-flow__minimap {
+  background: #0c1c24 !important;
+  border: 1px solid rgba(148, 178, 188, 0.16) !important;
+  border-radius: 12px !important;
+}
