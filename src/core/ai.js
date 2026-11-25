@@ -167,3 +167,10 @@ export async function explainSchema({ connectionId, database, focus }) {
 export function clearSchemaCache(connectionId) {
   for (const key of schemaCache.keys()) if (key.startsWith(`${connectionId}:`)) schemaCache.delete(key);
 }
+
+/** Small round-trip to confirm the key and model work. Sends no schema or data. */
+export async function testAi() {
+  const started = Date.now();
+  const { text, model } = await chat([{ role: 'user', content: 'Reply with the single word OK.' }], { maxTokens: 8 });
+  return { ok: true, model, reply: String(text || '').trim().slice(0, 40), latencyMs: Date.now() - started };
+}

@@ -35,6 +35,21 @@ export const API = {
       api(
         `/api/connections/${id}/databases/${encodeURIComponent(db)}/collections/${encodeURIComponent(col)}/indexes`,
       ),
+    health: () => api('/api/connections/health'),
+    objects: (id, db) => api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/objects`),
+    describe: (id, db, name) =>
+      api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/objects/${encodeURIComponent(name)}/describe`),
+    rows: (id, db, name, params = {}) => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v == null || v === '') return;
+        qs.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+      });
+      return api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/objects/${encodeURIComponent(name)}/rows?${qs}`);
+    },
+    query: (id, db, text, limit) =>
+      api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/query`, { method: 'POST', body: { text, limit } }),
+    graph: (id, db) => api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/graph`),
     users: (id, db, col, q = '') =>
       api(
         `/api/connections/${id}/databases/${encodeURIComponent(db)}/collections/${encodeURIComponent(col)}/users${q}`,
@@ -56,8 +71,11 @@ export const API = {
     list: () => api('/api/records'),
     remove: (id) => api(`/api/records/${id}`, { method: 'DELETE' }),
     open: (id) => api(`/api/records/${id}/open`, { method: 'POST' }),
-    decryptOpen: (id) => api(`/api/records/${id}/decrypt-open`, { method: 'POST' }),
+    decryptOpen: (id, passphrase) => api(`/api/records/${id}/decrypt-open`, { method: 'POST', body: { passphrase } }),
     import: (body) => api('/api/records/import', { method: 'POST', body }),
+    verify: (id, passphrase) => api(`/api/records/${id}/verify`, { method: 'POST', body: { passphrase } }),
+    restorePreview: (id, body) => api(`/api/records/${id}/restore/preview`, { method: 'POST', body }),
+    restoreExecute: (id, body) => api(`/api/records/${id}/restore/execute`, { method: 'POST', body }),
   },
   rotate: {
     preview: (body) => api('/api/rotate/preview', { method: 'POST', body }),
@@ -75,4 +93,12 @@ export const API = {
     save: (body) => api('/api/settings', { method: 'PUT', body }),
   },
   testEmail: (to) => api('/api/email/test', { method: 'POST', body: { to } }),
+  running: () => api('/api/running'),
+  writeAudit: () => api('/api/audit/writes'),
+  ai: {
+    status: () => api('/api/ai/status'),
+    query: (body) => api('/api/ai/query', { method: 'POST', body }),
+    explain: (body) => api('/api/ai/explain', { method: 'POST', body }),
+    test: () => api('/api/ai/test', { method: 'POST' }),
+  },
 };

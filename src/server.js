@@ -9,7 +9,7 @@ import { resolveConnection, testConnectionUri, healthCheckAll, closeAdapter } fr
 import { ENGINES } from './core/engines.js';
 import { verifyRecord } from './core/verify.js';
 import { previewRestore, executeRestore } from './core/restore.js';
-import { aiStatus, draftQuery, explainSchema, clearSchemaCache } from './core/ai.js';
+import { aiStatus, draftQuery, explainSchema, clearSchemaCache, testAi } from './core/ai.js';
 import { computeNextRun, describeInterval, formatNext } from './core/schedule.js';
 import { pickFolder } from './core/dialogs.js';
 import { revealPath, revealRecord } from './core/explorer.js';
@@ -241,6 +241,13 @@ export function createApp() {
     '/api/ai/query',
     wrap(async (req, res) => {
       res.json(await draftQuery(req.body || {}));
+    }),
+  );
+
+  app.post(
+    '/api/ai/test',
+    wrap(async (_req, res) => {
+      res.json(await testAi());
     }),
   );
 
