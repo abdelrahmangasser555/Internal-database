@@ -83,16 +83,18 @@ export async function sendHtmlEmail({ to, subject, html }) {
   return { skipped: false, messageId: result.MessageId };
 }
 
-export function backupEmailHtml(record) {
+export function backupEmailHtml(input) {
+  const labels = { mongodb: 'MongoDB', postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', sqlite: 'SQLite', mssql: 'SQL Server' };
+  const record = { ...input, engineLabel: labels[input.engine] || 'MongoDB' };
   const collections = (record.collections || [])
-    .map((col) => `${escapeHtml(col.name)} <span style="color:#C1C7C6;">(${col.count} docs)</span>`)
+    .map((col) => `${escapeHtml(col.name)} <span style="color:#C1C7C6;">(${col.count} ${record.engine && record.engine !== 'mongodb' ? 'rows' : 'docs'})</span>`)
     .join('<br>');
   const statusColor = record.status === 'success' ? '#00ED64' : '#DB3030';
   return wrapHtml(
     record.status === 'success' ? 'Backup completed' : 'Backup failed',
     `
       <div style="margin-bottom:16px;font-size:13px;color:#C1C7C6;">
-        A MongoDB backup ran on <strong style="color:#E8EDEB;">${escapeHtml(record.device)}</strong>.
+        A ${escapeHtml(record.engineLabel || "database")} backup ran on <strong style="color:#E8EDEB;">${escapeHtml(record.device)}</strong>.
       </div>
       ${rowsHtml([
         ['Status', `<span style="color:${statusColor};font-weight:600;">${escapeHtml(record.status)}</span>`],
