@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Local MongoDB backup scheduler, Compass-style browser, and password rotation",
+  "description": "Local database backups and exploration for MongoDB, PostgreSQL, MySQL/MariaDB, SQLite and SQL Server, plus Mongo password rotation",
   "scripts": {
     "prestart": "node scripts/ensure-ui.js",
     "start": "node src/index.js",
     "worker": "node src/worker.js",
-    "dev": "concurrently -k -n api,ui -c cyan,magenta \"node --watch src/index.js\" \"node scripts/build-ui.js --watch\"",
+    "dev": "concurrently -k -n api,ui -c cyan,magenta \"node --watch src/index.js\" \"vite --config web/vite.config.js\"",
     "build:ui": "node scripts/build-ui.js",
     "install:service": "node scripts/install-service.js",
     "uninstall:service": "node scripts/uninstall-service.js"
@@ -40,6 +40,7 @@
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.7",
     "sonner": "^2.0.8",
+    "tailwind-merge": "^3.7.1",
     "unzipper": "^0.12.3"
   },
   "devDependencies": {

@@ -4,16 +4,19 @@ import { BrowserRouter } from 'react-router-dom';
 import { ReactFlowProvider } from '@xyflow/react';
 import App from './App.jsx';
 import { AppProvider } from './state/AppState.jsx';
+import { ThemeProvider } from './state/Theme.jsx';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ReactFlowProvider>
-        <AppProvider>
-          <App />
-        </AppProvider>
-      </ReactFlowProvider>
+      <ThemeProvider>
+        <ReactFlowProvider>
+          <AppProvider>
+            <App />
+          </AppProvider>
+        </ReactFlowProvider>
+      </ThemeProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );

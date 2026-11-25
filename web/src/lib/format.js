@@ -23,12 +23,16 @@ export function formatWhen(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleString();
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function cell(value) {
   if (value == null) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === 'object') {
+    if (value.$oid) return value.$oid;
+    if (value.$date) return typeof value.$date === 'string' ? value.$date : JSON.stringify(value.$date);
+    return JSON.stringify(value);
+  }
   return String(value);
 }
 
@@ -48,4 +52,24 @@ export function bytes(n) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), units.length - 1);
   return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+export function compact(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—';
+  return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(n));
+}
+
+export function duration(ms) {
+  if (!ms && ms !== 0) return '—';
+  if (ms < 1000) return `${ms} ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)} s`;
+  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+}
+
+export function verificationTone(v) {
+  if (!v) return { tone: 'muted', label: 'not verified' };
+  if (v.status === 'verified') return { tone: 'ok', label: 'verified' };
+  if (v.status === 'partial') return { tone: 'warn', label: 'partly verified' };
+  return { tone: 'fail', label: 'verify failed' };
 }
