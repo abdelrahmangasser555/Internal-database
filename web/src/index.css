@@ -1,4 +1,94 @@
+@import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+  Backup Service brand kit
+  ------------------------
+  Colour   : neutral graphite surfaces + one accent ("Iris") + semantic ok/warn/danger/info.
+  Type     : Inter (UI) and JetBrains Mono (data, code). Scale 11 / 12 / 13 / 14 / 16 / 20 / 24 / 30.
+  Radius   : 6 (controls) · 10 (inputs, buttons) · 14 (cards) · 20 (panels).
+  Spacing  : 4px grid (Tailwind default).
+  Themes   : dark is the default; light mirrors every token. Set data-theme on <html>.
+*/
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root,
+[data-theme="dark"] {
+  --bg: #0a0b0e;
+  --bg-2: #0e1014;
+  --surface: #121419;
+  --surface-2: #181b21;
+  --surface-3: #20242c;
+  --line: rgb(255 255 255 / 0.07);
+  --line-strong: rgb(255 255 255 / 0.13);
+  --fg: #eceef2;
+  --muted: #9097a3;
+  --subtle: #636a76;
+  --primary: #7c83ff;
+  --primary-strong: #9aa0ff;
+  --primary-fg: #0b0c1a;
+  --ok: #3ddc97;
+  --warn: #f5b942;
+  --danger: #ff6b6b;
+  --info: #5cc8ff;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  --glow: radial-gradient(1200px 500px at 10% -20%, rgb(124 131 255 / 0.12), transparent 60%),
+    radial-gradient(900px 400px at 110% -10%, rgb(92 200 255 / 0.06), transparent 55%);
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #f6f7f9;
+  --bg-2: #eff1f4;
+  --surface: #ffffff;
+  --surface-2: #f4f5f8;
+  --surface-3: #eaedf2;
+  --line: rgb(15 23 42 / 0.08);
+  --line-strong: rgb(15 23 42 / 0.14);
+  --fg: #0f1422;
+  --muted: #5d6576;
+  --subtle: #8a92a2;
+  --primary: #4f5bff;
+  --primary-strong: #3a46f0;
+  --primary-fg: #ffffff;
+  --ok: #10a36b;
+  --warn: #c98510;
+  --danger: #e04848;
+  --info: #0a8fd8;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
+  --glow: radial-gradient(1200px 500px at 10% -20%, rgb(79 91 255 / 0.08), transparent 60%);
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-fg: var(--primary-fg);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --font-sans: "Inter Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --shadow-card: var(--shadow);
+}
 
 html,
 body,
@@ -8,112 +98,135 @@ body,
 }
 
 body {
-  font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
-  background: #061018;
-  color: #eef8f2;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  background: var(--bg);
+  color: var(--fg);
   -webkit-font-smoothing: antialiased;
-}
-
-* {
-  box-sizing: border-box;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background: rgba(0, 237, 100, 0.28);
-  color: #fff;
+  background: color-mix(in oklab, var(--primary) 30%, transparent);
 }
 
+/* Thin modern scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(138, 163, 173, 0.28);
+  background: var(--line-strong);
   border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.mesh {
-  background:
-    radial-gradient(900px 420px at 12% -10%, rgba(0, 237, 100, 0.16), transparent 55%),
-    radial-gradient(700px 380px at 100% 0%, rgba(125, 211, 252, 0.1), transparent 50%),
-    linear-gradient(180deg, #07141c 0%, #061018 100%);
+.app-glow {
+  background: var(--glow), var(--bg);
 }
 
-.glass {
-  background: rgba(16, 32, 41, 0.92);
-  border: 1px solid rgba(148, 178, 188, 0.16);
-  backdrop-filter: blur(18px);
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
 }
 
-.sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  border: 0;
-  background: rgba(0, 0, 0, 0.58);
-  backdrop-filter: blur(3px);
+.hairline {
+  border-color: var(--line);
 }
 
-.sheet-panel {
-  position: fixed;
-  inset: 0 0 0 auto;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  width: min(100vw, 32rem);
-  background: #0d1c24;
-  border-left: 1px solid rgba(148, 178, 188, 0.16);
-  box-shadow: -24px 0 80px rgba(0, 0, 0, 0.5);
+.focus-ring:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--primary) 70%, transparent);
+  outline-offset: 2px;
 }
 
-.sheet-panel.wide {
-  width: min(100vw, 44rem);
+.num {
+  font-variant-numeric: tabular-nums;
 }
 
-.confirm-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.58);
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse {
+  animation: pulse-dot 1.4s ease-in-out infinite;
 }
 
-.confirm-card {
-  width: min(100%, 28rem);
-  border-radius: 1rem;
-  border: 1px solid rgba(148, 178, 188, 0.16);
-  background: #102029;
-  padding: 1.25rem;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 6px;
 }
 
+/* Code / JSON */
+.code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.json-key { color: var(--primary-strong); }
+.json-str { color: var(--ok); }
+.json-num { color: var(--warn); }
+.json-bool { color: var(--info); }
+.json-null { color: var(--subtle); }
+
+/* Markdown from the assistant */
+.prose-lite h1, .prose-lite h2, .prose-lite h3 { font-weight: 600; margin: 1em 0 0.4em; font-size: 14px; }
+.prose-lite p { margin: 0.5em 0; line-height: 1.6; }
+.prose-lite ul { margin: 0.4em 0; padding-left: 1.2em; list-style: disc; }
+.prose-lite li { margin: 0.2em 0; line-height: 1.55; }
+.prose-lite code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-3); padding: 1px 5px; border-radius: 5px; }
+.prose-lite pre { background: var(--bg-2); border: 1px solid var(--line); padding: 10px 12px; border-radius: 10px; overflow-x: auto; }
+.prose-lite pre code { background: none; padding: 0; }
+
+/* React Flow theming */
 .react-flow {
   --xy-background-color: transparent;
-  --xy-node-border-radius: 16px;
+  --xy-node-border-radius: 14px;
+  --xy-edge-stroke: var(--line-strong);
+  --xy-handle-background-color: var(--surface-3);
+  --xy-handle-border-color: var(--line-strong);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--surface-2);
+  --xy-controls-button-color: var(--fg);
+  --xy-controls-button-border-color: var(--line);
+  --xy-minimap-background-color: var(--surface);
+  --xy-minimap-mask-background-color: color-mix(in oklab, var(--bg) 70%, transparent);
 }
-
-.react-flow__attribution {
-  display: none;
-}
-
+.react-flow__attribution { display: none; }
 .react-flow__controls {
-  box-shadow: none !important;
-  border: 1px solid rgba(148, 178, 188, 0.16);
+  box-shadow: var(--shadow) !important;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   overflow: hidden;
-  border-radius: 12px;
 }
-
-.react-flow__controls-button {
-  background: #12222c !important;
-  border-bottom: 1px solid rgba(148, 178, 188, 0.16) !important;
-  fill: #cfe4dc !important;
-}
-
 .react-flow__minimap {
-  background: #0c1c24 !important;
-  border: 1px solid rgba(148, 178, 188, 0.16) !important;
-  border-radius: 12px !important;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.react-flow__node { font-family: var(--font-sans); }
+.react-flow__handle { width: 7px; height: 7px; }
+
+@keyframes dash {
+  to { stroke-dashoffset: -20; }
+}
+.edge-flow path.react-flow__edge-path {
+  stroke-dasharray: 5 5;
+  animation: dash 0.9s linear infinite;
 }

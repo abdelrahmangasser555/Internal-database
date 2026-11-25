@@ -1,17 +1,17 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { once } from 'node:events';
 import { finished } from 'node:stream/promises';
-import { MongoClient } from 'mongodb';
-import { EJSON } from 'bson';
 import archiver from 'archiver';
 import unzipper from 'unzipper';
 import { encryptFileWithPassphrase, decryptFileWithPassphrase, isEncryptedBackup, newId } from './crypto.js';
-import { addRecord, getConnection, getJob, getRecord } from './store.js';
+import { addRecord, getConnection, getJob, getRecord, listRecords, patchRecord } from './store.js';
 import { backupEmailHtml, sendHtmlEmail } from './email.js';
 import { logLine } from './log.js';
 import { deviceName, TMP_DIR } from './paths.js';
+import { adapterFor } from './adapters/index.js';
+import { engineInfo } from './engines.js';
+import { hashTree, sha256File, writeChecksumSidecar } from './archive.js';
 
 const running = new Map();
 
@@ -32,6 +32,10 @@ export function getRunning(jobId) {
   return running.get(jobId) || null;
 }
 
+export function listRunning() {
+  return Object.fromEntries(running.entries());
+}
+
 async function zipDirectory(sourceDir, zipPath) {
   await fs.promises.mkdir(path.dirname(zipPath), { recursive: true });
   const output = fs.createWriteStream(zipPath, { mode: 0o600 });
@@ -42,65 +46,19 @@ async function zipDirectory(sourceDir, zipPath) {
   await finished(output);
 }
 
-async function dumpDatabase({ uri, database, collections, allCollections, onProgress }) {
-  const client = new MongoClient(uri, {
-    maxPoolSize: 3,
-    minPoolSize: 0,
-    maxIdleTimeMS: 60_000,
-    serverSelectionTimeoutMS: 12_000,
-    connectTimeoutMS: 12_000,
-    readPreference: 'secondaryPreferred',
-    readConcern: { level: 'majority' },
-  });
-  await client.connect();
+/** Read-only dump through the engine adapter into a temp folder, plus metadata and checksums. */
+async function dumpDatabase({ connection, database, objects, onProgress }) {
+  const engine = connection.engine || 'mongodb';
+  const adapter = adapterFor(engine);
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bkup-dump-'));
   try {
-    const db = client.db(database);
-    let names = collections;
-    if (allCollections || !names?.length) {
-      names = (await db.listCollections({}, { nameOnly: true }).toArray())
-        .map((col) => col.name)
-        .filter((name) => !name.startsWith('system.'));
-    }
-
-    const summary = [];
-    for (let i = 0; i < names.length; i += 1) {
-      const name = names[i];
-      onProgress?.({
-        collection: name,
-        collectionsDone: i,
-        collectionsTotal: names.length,
-      });
-      const col = db.collection(name);
-      const colDir = path.join(tmpRoot, 'collections', name);
-      fs.mkdirSync(colDir, { recursive: true });
-      const indexes = await col.indexes();
-      fs.writeFileSync(path.join(colDir, 'indexes.json'), JSON.stringify(indexes, null, 2));
-
-      const ndjsonPath = path.join(colDir, 'documents.ndjson');
-      const ws = fs.createWriteStream(ndjsonPath);
-      let count = 0;
-      const cursor = col.find({}, { noCursorTimeout: false }).batchSize(500);
-      for await (const doc of cursor) {
-        const line = `${EJSON.stringify(doc)}\n`;
-        if (!ws.write(line)) await once(ws, 'drain');
-        count += 1;
-        if (count % 1000 === 0) {
-          onProgress?.({
-            collection: name,
-            collectionsDone: i,
-            collectionsTotal: names.length,
-            documents: count,
-          });
-        }
-      }
-      ws.end();
-      await finished(ws);
-      summary.push({ name, count, indexes: indexes.length });
-    }
-
+    const { summary } = await adapter.dump(connection, database, { objects, onProgress }, tmpRoot);
+    const checksums = await hashTree(tmpRoot);
+    fs.writeFileSync(path.join(tmpRoot, 'checksums.json'), JSON.stringify({ algorithm: 'sha256', files: checksums }, null, 2));
     const metadata = {
-      format: 'backup-service-v1',
+      format: 'backup-service-v2',
+      engine,
+      engineLabel: engineInfo(engine).label,
       database,
       createdAt: new Date().toISOString(),
       hostname: os.hostname(),
@@ -113,9 +71,38 @@ async function dumpDatabase({ uri, database, collections, allCollections, onProg
   } catch (err) {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
     throw err;
-  } finally {
-    await client.close();
   }
+}
+
+/** Delete old backup files for a job according to its retention policy. Records are kept and marked pruned. */
+export function applyRetention(job) {
+  const keepLast = Number(job.retention?.keepLast) || 0;
+  const maxAgeDays = Number(job.retention?.maxAgeDays) || 0;
+  if (!keepLast && !maxAgeDays) return [];
+  const target = path.resolve(job.targetPath || '');
+  const candidates = listRecords().filter(
+    (r) => r.jobId === job.id && r.status === 'success' && !r.pruned && r.filePath && fs.existsSync(r.filePath),
+  );
+  const now = Date.now();
+  const pruned = [];
+  candidates.forEach((rec, index) => {
+    const ageDays = (now - new Date(rec.finishedAt || rec.startedAt).getTime()) / 86_400_000;
+    const overCount = keepLast && index >= keepLast;
+    const tooOld = maxAgeDays && ageDays > maxAgeDays;
+    if (!overCount && !tooOld) return;
+    // Only ever touch files this job wrote inside its own folder.
+    if (path.dirname(path.resolve(rec.filePath)) !== target) return;
+    try {
+      fs.unlinkSync(rec.filePath);
+      if (fs.existsSync(`${rec.filePath}.sha256`)) fs.unlinkSync(`${rec.filePath}.sha256`);
+      patchRecord(rec.id, { pruned: true, prunedAt: new Date().toISOString(), prunedReason: overCount ? `keep last ${keepLast}` : `older than ${maxAgeDays} days` });
+      pruned.push(rec.id);
+    } catch (err) {
+      logLine(`Retention could not remove ${rec.filePath}: ${err.message}`);
+    }
+  });
+  if (pruned.length) logLine(`Retention pruned ${pruned.length} file(s) for ${job.name}`);
+  return pruned;
 }
 
 export async function runBackup(jobId, { reason = 'schedule' } = {}) {
@@ -131,46 +118,47 @@ export async function runBackup(jobId, { reason = 'schedule' } = {}) {
   fs.mkdirSync(job.targetPath, { recursive: true });
 
   const startedAt = new Date();
-  const progress = { status: 'running', collectionsDone: 0, collectionsTotal: 0, collection: '' };
+  const progress = { status: 'running', collectionsDone: 0, collectionsTotal: 0, collection: '', startedAt: startedAt.toISOString() };
   running.set(jobId, progress);
 
-  const fileBase = `${String(job.name).replace(/[^\w.-]+/g, '_')}_${job.database}_${stamp()}`;
-  const zipName = `${fileBase}.zip`;
-  const encName = `${fileBase}.zip.enc`;
-  const zipPath = path.join(job.targetPath, zipName);
-  const encPath = path.join(job.targetPath, encName);
+  const safeDb = String(job.database).replace(/[^\w.-]+/g, '_');
+  const fileBase = `${String(job.name).replace(/[^\w.-]+/g, '_')}_${safeDb}_${stamp()}`;
+  const zipPath = path.join(job.targetPath, `${fileBase}.zip`);
+  const encPath = path.join(job.targetPath, `${fileBase}.zip.enc`);
   let filePath = job.encrypt ? encPath : zipPath;
   let error = null;
   let summary = [];
   let documentCount = 0;
   let size = 0;
-  let encrypted = Boolean(job.encrypt);
+  let sha256 = null;
+  const encrypted = Boolean(job.encrypt);
   let tmpRoot;
 
   try {
     const dump = await dumpDatabase({
-      uri: connection.uri,
+      connection,
       database: job.database,
-      collections: job.collections,
-      allCollections: job.allCollections,
+      objects: job.allCollections ? [] : job.collections,
       onProgress: (p) => Object.assign(progress, p),
     });
     tmpRoot = dump.tmpRoot;
     summary = dump.summary;
     documentCount = dump.documentCount;
+    progress.phase = 'compressing';
     await zipDirectory(tmpRoot, zipPath);
     if (job.encrypt) {
-      if (!job.passphrase) {
-        throw new Error('Encryption is on but no passphrase is set. Edit the job and set one.');
-      }
+      if (!job.passphrase) throw new Error('Encryption is on but no passphrase is set. Edit the job and set one.');
+      progress.phase = 'encrypting';
       await encryptFileWithPassphrase(zipPath, encPath, job.passphrase);
       fs.unlinkSync(zipPath);
       filePath = encPath;
-      encrypted = true;
     } else {
       filePath = zipPath;
     }
     size = fs.statSync(filePath).size;
+    progress.phase = 'checksum';
+    sha256 = await sha256File(filePath);
+    writeChecksumSidecar(filePath, sha256);
   } catch (err) {
     error = err.message || String(err);
     logLine(`Backup failed [${job.name}]: ${error}`);
@@ -192,6 +180,7 @@ export async function runBackup(jobId, { reason = 'schedule' } = {}) {
     jobName: job.name,
     connectionId: job.connectionId,
     connectionName: connection.name,
+    engine: connection.engine || 'mongodb',
     database: job.database,
     collections: summary,
     documentCount,
@@ -200,6 +189,7 @@ export async function runBackup(jobId, { reason = 'schedule' } = {}) {
     size,
     sizeLabel: formatBytes(size),
     encrypted,
+    sha256,
     status: error ? 'failed' : 'success',
     error,
     reason,
@@ -211,13 +201,22 @@ export async function runBackup(jobId, { reason = 'schedule' } = {}) {
   addRecord(record);
   running.delete(jobId);
 
+  if (!error && job.verifyAfter !== false) {
+    try {
+      const { verifyRecord } = await import('./verify.js');
+      const report = await verifyRecord(record.id);
+      record.verification = report.summary;
+    } catch (err) {
+      logLine(`Verification after backup failed: ${err.message}`);
+    }
+  }
+  if (!error) applyRetention(job);
+
   if (job.notifyEmails?.length) {
     try {
       await sendHtmlEmail({
         to: job.notifyEmails,
-        subject: error
-          ? `[Backup failed] ${job.name} / ${job.database}`
-          : `[Backup] ${job.name} / ${job.database}`,
+        subject: error ? `[Backup failed] ${job.name} / ${job.database}` : `[Backup] ${job.name} / ${job.database}`,
         html: backupEmailHtml(record),
       });
     } catch (mailErr) {
@@ -227,23 +226,24 @@ export async function runBackup(jobId, { reason = 'schedule' } = {}) {
 
   if (error) throw new Error(error);
   logLine(`Backup ok [${job.name}] ${filePath}`);
-  return record;
+  return getRecord(record.id) || record;
 }
 
 export function recordExists(record) {
   return Boolean(record?.filePath && fs.existsSync(record.filePath));
 }
 
-export async function decryptRecord(recordId, destDir) {
+export async function decryptRecord(recordId, destDir, passphraseOverride) {
   const record = getRecord(recordId);
   if (!record) throw new Error('Record not found');
   if (!fs.existsSync(record.filePath)) throw new Error('Backup file is missing');
-  const job = getJob(record.jobId, { includePassphrase: true });
+  const job = record.jobId ? getJob(record.jobId, { includePassphrase: true }) : null;
+  const passphrase = passphraseOverride || job?.passphrase;
   fs.mkdirSync(destDir, { recursive: true });
-  const outZip = path.join(destDir, record.fileName.replace(/\.enc$/i, '').replace(/\.zip$/i, '') + '.zip');
+  const outZip = path.join(destDir, `${record.fileName.replace(/\.enc$/i, '').replace(/\.zip$/i, '')}.zip`);
   if (isEncryptedBackup(record.filePath)) {
-    if (!job?.passphrase) throw new Error('This backup is encrypted. Set the job passphrase to decrypt it.');
-    await decryptFileWithPassphrase(record.filePath, outZip, job.passphrase);
+    if (!passphrase) throw new Error('This backup is encrypted. Set the job passphrase to decrypt it.');
+    await decryptFileWithPassphrase(record.filePath, outZip, passphrase);
   } else {
     fs.copyFileSync(record.filePath, outZip);
   }
@@ -258,6 +258,12 @@ export async function decryptRecord(recordId, destDir) {
   return { zipPath: outZip, extractDir };
 }
 
+export function passphraseFor(record, override) {
+  if (override) return override;
+  if (!record?.jobId) return null;
+  return getJob(record.jobId, { includePassphrase: true })?.passphrase || null;
+}
+
 export async function exportRecord(recordId, destPath) {
   const record = getRecord(recordId);
   if (!record) throw new Error('Record not found');
@@ -268,7 +274,7 @@ export async function exportRecord(recordId, destPath) {
 }
 
 export function importBackupFile({ filePath, connectionName = '', database = '' }) {
-  if (!fs.existsSync(filePath)) throw new Error('File not found');
+  if (!filePath || !fs.existsSync(filePath)) throw new Error('File not found');
   const stat = fs.statSync(filePath);
   const encrypted = isEncryptedBackup(filePath) || filePath.endsWith('.enc');
   const record = {
@@ -277,6 +283,7 @@ export function importBackupFile({ filePath, connectionName = '', database = '' 
     jobName: 'Imported',
     connectionId: null,
     connectionName: connectionName || 'Imported',
+    engine: null,
     database: database || '',
     collections: [],
     documentCount: 0,
@@ -285,6 +292,7 @@ export function importBackupFile({ filePath, connectionName = '', database = '' 
     size: stat.size,
     sizeLabel: formatBytes(stat.size),
     encrypted,
+    sha256: null,
     status: 'success',
     error: null,
     reason: 'import',
@@ -293,6 +301,8 @@ export function importBackupFile({ filePath, connectionName = '', database = '' 
     finishedAt: new Date(stat.mtime).toISOString(),
     durationMs: 0,
   };
+  const sidecar = `${filePath}.sha256`;
+  if (fs.existsSync(sidecar)) record.sha256 = fs.readFileSync(sidecar, 'utf8').trim().split(/\s+/)[0] || null;
   addRecord(record);
   return record;
 }

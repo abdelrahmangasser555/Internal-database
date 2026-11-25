@@ -1,44 +1,53 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import {
-  Database,
-  FolderArchive,
-  KeyRound,
-  LayoutDashboard,
-  Plus,
-  Settings,
-  Workflow,
-} from 'lucide-react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Moon, Plus, Search, Sparkles, Sun } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { useApp } from '../state/AppState.jsx';
-import { Button } from './ui.jsx';
-import { CommandPalette } from './CommandPalette.jsx';
+import { useTheme } from '../state/Theme.jsx';
+import { Button, Kbd, StatusDot } from './ui.jsx';
+import { BrandMark } from './EngineLogo.jsx';
+import { CommandPalette, openPalette } from './CommandPalette.jsx';
 import { ConnectionSheet } from './ConnectionSheet.jsx';
 import { JobSheet } from './JobSheet.jsx';
 import { RecordSheet } from './RecordSheet.jsx';
+import { RestoreSheet } from './RestoreSheet.jsx';
+import { AssistantSheet } from './AssistantSheet.jsx';
+import { cn } from '../lib/cn.js';
+import { NAV } from '../lib/nav.js';
 
-const NAV = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/flow', label: 'Flow', icon: Workflow },
-  { to: '/browse', label: 'Browse', icon: Database },
-  { to: '/backups', label: 'Backups', icon: FolderArchive },
-  { to: '/rotate', label: 'Rotate', icon: KeyRound },
-  { to: '/settings', label: 'Settings', icon: Settings },
-];
+export { NAV };
+
+const TITLES = { '': 'Overview', browse: 'Explore', backups: 'Backups', flow: 'Flow', rotate: 'Password rotate', settings: 'Settings' };
 
 export function AppShell() {
-  const { meta, openSheet, jobs } = useApp();
+  const { meta, openSheet, jobs, openAssistant } = useApp();
+  const { theme, toggle } = useTheme();
   const location = useLocation();
-  const running = jobs.some((j) => j.running);
+  const navigate = useNavigate();
+  const running = jobs.filter((j) => j.running);
+  const section = location.pathname.split('/')[1] || '';
+  const fullBleed = section === 'browse' || section === 'flow';
 
   return (
-    <div className="mesh flex h-full min-h-screen">
-      <aside className="flex w-[84px] flex-col items-center border-r border-line bg-ink-2/80 py-4">
-        <div
-          className="mb-6 grid h-11 w-11 place-items-center rounded-full shadow-[0_0_0_4px_rgba(0,237,100,0.12)]"
-          style={{ background: 'radial-gradient(circle at 30% 30%, #5dff9f, #00ed64 42%, #00684a)' }}
-          title="Backup Service"
-        />
-        <nav className="flex flex-1 flex-col gap-1">
+    <div className="app-glow flex h-full min-h-screen">
+      {/* Desktop side nav */}
+      <aside className="hidden w-[232px] shrink-0 flex-col border-r border-line bg-bg-2/60 px-3 py-4 backdrop-blur md:flex">
+        <button type="button" onClick={() => navigate('/')} className="focus-ring mb-6 flex items-center gap-2.5 rounded-md px-2 text-left">
+          <BrandMark size={30} />
+          <span>
+            <span className="block text-[14px] font-semibold tracking-[-0.01em]">Backup Service</span>
+            <span className="block text-[11px] text-subtle">Backups · Explore · Restore</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={openPalette}
+          className="focus-ring mb-4 flex h-9 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-[12.5px] text-subtle hover:border-line-strong hover:text-muted"
+        >
+          <Search size={14} />
+          <span className="flex-1 text-left">Search or jump…</span>
+          <Kbd>Ctrl K</Kbd>
+        </button>
+        <nav className="flex flex-col gap-0.5">
           {NAV.map((item) => {
             const Icon = item.icon;
             return (
@@ -46,60 +55,95 @@ export function AppShell() {
                 key={item.to}
                 to={item.to}
                 end={item.end}
-                title={item.label}
                 className={({ isActive }) =>
-                  `flex h-12 w-12 flex-col items-center justify-center rounded-2xl text-[10px] ${
-                    isActive ? 'bg-leaf/15 text-leaf' : 'text-mist hover:bg-white/5 hover:text-foam'
-                  }`
+                  cn(
+                    'focus-ring flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium transition-colors',
+                    isActive ? 'bg-surface-2 text-fg shadow-[inset_0_0_0_1px_var(--line)]' : 'text-muted hover:bg-surface-2/60 hover:text-fg',
+                  )
                 }
               >
-                <Icon size={18} />
-                <span className="mt-1">{item.label}</span>
+                {({ isActive }) => (
+                  <>
+                    <Icon size={16} className={isActive ? 'text-primary' : ''} />
+                    {item.label}
+                    {item.to === '/backups' && running.length ? <StatusDot tone="primary" pulse className="ml-auto" /> : null}
+                  </>
+                )}
               </NavLink>
             );
           })}
         </nav>
-        <Button
-          variant="primary"
-          className="h-11 w-11 rounded-2xl p-0"
-          title="New connection"
-          onClick={() => openSheet({ type: 'connection' })}
-        >
-          <Plus size={18} />
-        </Button>
-      </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-line bg-ink/40 px-5">
-          <div>
-            <div className="font-display text-sm font-semibold">Backup Service</div>
-            <div className="text-[11px] text-mist">
-              {meta.device || 'this device'}
-              {meta.platform ? ` · ${meta.platform}` : ''}
-              {running ? ' · backup running' : ''}
-            </div>
+        <div className="mt-auto space-y-2">
+          <Button variant="primary" className="w-full" onClick={() => openSheet({ type: 'connection' })}>
+            <Plus size={15} /> New connection
+          </Button>
+          <div className="flex items-center justify-between rounded-md px-2 py-1 text-[11px] text-subtle">
+            <span className="truncate" title={meta.device}>
+              {meta.device || 'this device'} · {meta.platform || ''}
+            </span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-mist">
-            <kbd className="rounded-lg border border-line bg-panel px-2 py-1 font-mono">Ctrl K</kbd>
-            <span>{location.pathname === '/' ? 'Overview' : location.pathname.slice(1)}</span>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-13 shrink-0 items-center justify-between gap-3 border-b border-line bg-bg/70 px-4 backdrop-blur md:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="md:hidden">
+              <BrandMark size={24} />
+            </span>
+            <h2 className="truncate text-[13.5px] font-semibold">{TITLES[section] || 'Backup Service'}</h2>
+            {running.length ? (
+              <span className="hidden items-center gap-1.5 rounded-full bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary-strong sm:inline-flex">
+                <StatusDot tone="primary" pulse /> {running.length} backup{running.length > 1 ? 's' : ''} running
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" onClick={openPalette} className="md:hidden" aria-label="Search">
+              <Search size={15} />
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => openAssistant({})} title="Assistant (Ctrl J)">
+              <Sparkles size={14} className="text-primary" /> <span className="hidden sm:inline">Ask</span>
+            </Button>
+            <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme" title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            </Button>
           </div>
         </header>
-        <main className="min-h-0 flex-1 overflow-auto">
+        <main className={cn('min-h-0 flex-1 pb-16 md:pb-0', fullBleed ? 'overflow-hidden' : 'overflow-auto')}>
           <Outlet />
         </main>
       </div>
+
+      {/* Mobile bottom nav */}
+      <nav className="fixed inset-x-2 bottom-2 z-30 flex items-center justify-around rounded-xl border border-line bg-surface/90 px-1 py-1 shadow-2xl backdrop-blur md:hidden" style={{ paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom))' }}>
+        {NAV.slice(0, 5).map((item) => {
+          const Icon = item.icon;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) => cn('flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10.5px] font-medium', isActive ? 'text-primary' : 'text-muted')}
+            >
+              <Icon size={18} />
+              {item.label}
+            </NavLink>
+          );
+        })}
+      </nav>
+
       <CommandPalette />
       <ConnectionSheet />
       <JobSheet />
       <RecordSheet />
+      <RestoreSheet />
+      <AssistantSheet />
       <Toaster
-        theme="dark"
+        theme={theme}
         position="bottom-right"
         toastOptions={{
-          style: {
-            background: '#12222c',
-            border: '1px solid rgba(148,178,188,0.16)',
-            color: '#eef8f2',
-          },
+          style: { background: 'var(--surface)', border: '1px solid var(--line-strong)', color: 'var(--fg)', fontSize: '13px' },
         }}
       />
     </div>

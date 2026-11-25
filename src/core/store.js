@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { decryptSecret, encryptSecret, newId } from './crypto.js';
+import { detectEngine, maskUri as maskConnectionUri } from './engines.js';
 import {
   CONNECTIONS_FILE,
   JOBS_FILE,
   RECORDS_FILE,
   ROTATION_AUDIT_FILE,
   SETTINGS_FILE,
+  WRITE_AUDIT_FILE,
 } from './paths.js';
 
 function readJson(file, fallback) {
@@ -29,13 +31,14 @@ function publicConnection(row) {
   const { uriEnc, ...rest } = row;
   return {
     ...rest,
+    engine: rest.engine || 'mongodb',
     hasUri: Boolean(uriEnc),
     uriMasked: rest.uriMasked || '',
   };
 }
 
 export function maskUri(uri) {
-  return String(uri || '').replace(/(:\/\/[^:/@]+:)([^@]+)(@)/, '$1*****$3');
+  return maskConnectionUri(uri);
 }
 
 export function listConnections() {
@@ -61,12 +64,23 @@ export function saveConnection(input) {
     rows.push(row);
   }
   row.name = String(input.name || 'Untitled').trim();
-  row.color = input.color || '#00ED64';
+  row.color = input.color || row.color || '#6366F1';
+  row.environment = ['production', 'staging', 'development', 'local'].includes(input.environment)
+    ? input.environment
+    : row.environment || 'production';
+  row.tags = Array.isArray(input.tags) ? input.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 8) : row.tags || [];
   row.updatedAt = now;
   if (input.uri) {
-    row.uriEnc = encryptSecret(input.uri.trim());
-    row.uriMasked = maskUri(input.uri.trim());
+    const uri = input.uri.trim();
+    const engine = input.engine || detectEngine(uri);
+    if (!engine) throw new Error('Unrecognised connection string. Use mongodb://, postgres://, mysql://, mariadb://, sqlite:/path or mssql://');
+    row.engine = engine;
+    row.uriEnc = encryptSecret(uri);
+    row.uriMasked = maskUri(uri);
+  } else if (input.engine && row.uriEnc) {
+    row.engine = input.engine;
   }
+  if (!row.engine) row.engine = 'mongodb';
   writeJson(CONNECTIONS_FILE, rows);
   return publicConnection(row);
 }
@@ -113,6 +127,11 @@ export function saveJob(input) {
     ? input.notifyEmails.map((e) => String(e).trim()).filter(Boolean)
     : [];
   row.encrypt = Boolean(input.encrypt);
+  row.retention = {
+    keepLast: Math.max(0, Math.floor(Number(input.retention?.keepLast ?? row.retention?.keepLast ?? 0)) || 0),
+    maxAgeDays: Math.max(0, Math.floor(Number(input.retention?.maxAgeDays ?? row.retention?.maxAgeDays ?? 0)) || 0),
+  };
+  row.verifyAfter = input.verifyAfter !== undefined ? Boolean(input.verifyAfter) : row.verifyAfter !== false;
   row.enabled = input.enabled !== false;
   row.updatedAt = now;
   if (input.passphrase) {
@@ -157,6 +176,15 @@ export function addRecord(record) {
   return record;
 }
 
+export function patchRecord(id, patch) {
+  const rows = readJson(RECORDS_FILE, []);
+  const row = rows.find((item) => item.id === id);
+  if (!row) return null;
+  Object.assign(row, patch);
+  writeJson(RECORDS_FILE, rows);
+  return row;
+}
+
 export function deleteRecord(id) {
   writeJson(
     RECORDS_FILE,
@@ -164,19 +192,49 @@ export function deleteRecord(id) {
   );
 }
 
+export const DEFAULT_AI_MODEL = 'deepseek/deepseek-v4.1-flash';
+
 export function getSettings() {
   return {
     fromEmail: process.env.SES_FROM_EMAIL || 'backups-service@tailoredtech.tech',
     port: Number(process.env.APP_PORT || 4780),
     hash: { algorithm: 'bcrypt', rounds: 10 },
+    ai: { model: process.env.OPENROUTER_MODEL || DEFAULT_AI_MODEL, enabled: true },
     ...readJson(SETTINGS_FILE, {}),
   };
 }
 
+/** Settings safe to send to the browser: secrets are replaced by flags. */
+export function publicSettings() {
+  const { aiKeyEnc, ...rest } = getSettings();
+  return {
+    ...rest,
+    ai: {
+      model: rest.ai?.model || DEFAULT_AI_MODEL,
+      enabled: rest.ai?.enabled !== false,
+      hasKey: Boolean(process.env.OPENROUTER_API_KEY || aiKeyEnc),
+      keySource: process.env.OPENROUTER_API_KEY ? 'env' : aiKeyEnc ? 'settings' : null,
+    },
+  };
+}
+
+export function getAiKey() {
+  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
+  const { aiKeyEnc } = readJson(SETTINGS_FILE, {});
+  return aiKeyEnc ? decryptSecret(aiKeyEnc) : null;
+}
+
 export function saveSettings(patch) {
-  const next = { ...getSettings(), ...patch, updatedAt: new Date().toISOString() };
+  const { aiKey, aiKeyEnc: _ignored, ...rest } = patch || {};
+  const current = readJson(SETTINGS_FILE, {});
+  const next = { ...getSettings(), ...current, ...rest, updatedAt: new Date().toISOString() };
+  if (rest.ai) next.ai = { ...(getSettings().ai || {}), ...rest.ai };
+  if (typeof aiKey === 'string') {
+    if (aiKey.trim()) next.aiKeyEnc = encryptSecret(aiKey.trim());
+    else delete next.aiKeyEnc;
+  }
   writeJson(SETTINGS_FILE, next);
-  return next;
+  return publicSettings();
 }
 
 export function addRotationAudit(entry) {
@@ -187,4 +245,14 @@ export function addRotationAudit(entry) {
 
 export function listRotationAudit() {
   return readJson(ROTATION_AUDIT_FILE, []);
+}
+
+export function addWriteAudit(entry) {
+  const rows = readJson(WRITE_AUDIT_FILE, []);
+  rows.unshift({ at: new Date().toISOString(), ...entry });
+  writeJson(WRITE_AUDIT_FILE, rows.slice(0, 2000));
+}
+
+export function listWriteAudit() {
+  return readJson(WRITE_AUDIT_FILE, []);
 }

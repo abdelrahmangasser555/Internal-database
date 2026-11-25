@@ -2,9 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { fileURLToPath } from 'node:url';
-import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, listRotationAudit } from './core/store.js';
-import { testUri, listDatabases, listCollections, findDocuments, collectionStats, listIndexes, sampleUsers, closeClient } from './core/mongo.js';
-import { runBackup, getRunning, recordExists, decryptRecord, importBackupFile, tempDecryptDir } from './core/backup.js';
+import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, publicSettings, listRotationAudit, listWriteAudit } from './core/store.js';
+import { listCollections, findDocuments, collectionStats, listIndexes, sampleUsers, closeClient } from './core/mongo.js';
+import { runBackup, getRunning, listRunning, recordExists, decryptRecord, importBackupFile, tempDecryptDir } from './core/backup.js';
+import { resolveConnection, testConnectionUri, healthCheckAll, closeAdapter } from './core/adapters/index.js';
+import { ENGINES } from './core/engines.js';
+import { verifyRecord } from './core/verify.js';
+import { previewRestore, executeRestore } from './core/restore.js';
+import { aiStatus, draftQuery, explainSchema, clearSchemaCache, testAi } from './core/ai.js';
 import { computeNextRun, describeInterval, formatNext } from './core/schedule.js';
 import { pickFolder } from './core/dialogs.js';
 import { revealPath, revealRecord } from './core/explorer.js';
@@ -43,8 +48,20 @@ export function createApp() {
       fromEmail: fromAddress(),
       autostart: autostartStatus(),
       hash: getHashConfig(getSettings()),
+      engines: Object.values(ENGINES),
+      ai: aiStatus(),
+      node: process.versions.node,
     });
   });
+
+  app.get('/api/running', (_req, res) => res.json(listRunning()));
+
+  app.get(
+    '/api/connections/health',
+    wrap(async (_req, res) => {
+      res.json(await healthCheckAll());
+    }),
+  );
 
   app.get('/api/connections', (_req, res) => res.json(listConnections()));
 
@@ -59,7 +76,12 @@ export function createApp() {
   app.put(
     '/api/connections/:id',
     wrap(async (req, res) => {
+      const before = getConnection(req.params.id);
       const row = saveConnection({ ...req.body, id: req.params.id });
+      if (req.body?.uri && before) {
+        await closeAdapter(req.params.id, before.engine);
+        clearSchemaCache(req.params.id);
+      }
       res.json(row);
     }),
   );
@@ -67,7 +89,9 @@ export function createApp() {
   app.delete(
     '/api/connections/:id',
     wrap(async (req, res) => {
+      const before = getConnection(req.params.id);
       await closeClient(req.params.id);
+      if (before) await closeAdapter(req.params.id, before.engine);
       deleteConnection(req.params.id);
       res.json({ ok: true });
     }),
@@ -77,18 +101,22 @@ export function createApp() {
     '/api/connections/test',
     wrap(async (req, res) => {
       let uri = req.body?.uri;
+      let engine = req.body?.engine;
       if (!uri && req.body?.id) {
-        uri = getConnection(req.body.id, { includeUri: true })?.uri;
+        const saved = getConnection(req.body.id, { includeUri: true });
+        uri = saved?.uri;
+        engine = engine || saved?.engine;
       }
       if (!uri) throw new Error('Connection string is required');
-      res.json(await testUri(uri));
+      res.json(await testConnectionUri(uri, engine));
     }),
   );
 
   app.get(
     '/api/connections/:id/databases',
     wrap(async (req, res) => {
-      res.json(await listDatabases(req.params.id));
+      const { conn, adapter } = resolveConnection(req.params.id);
+      res.json(await adapter.listDatabases(conn));
     }),
   );
 
@@ -144,6 +172,89 @@ export function createApp() {
           search: String(req.query.search || ''),
         }),
       );
+    }),
+  );
+
+  // ---- Engine-agnostic explorer (Mongo + SQL). Everything here is read-only. ----
+  const dbBase = '/api/connections/:id/databases/:db';
+
+  app.get(
+    `${dbBase}/objects`,
+    wrap(async (req, res) => {
+      const { conn, adapter } = resolveConnection(req.params.id);
+      res.json(await adapter.listObjects(conn, req.params.db));
+    }),
+  );
+
+  app.get(
+    `${dbBase}/objects/:name/describe`,
+    wrap(async (req, res) => {
+      const { conn, adapter } = resolveConnection(req.params.id);
+      res.json(await adapter.describe(conn, req.params.db, req.params.name));
+    }),
+  );
+
+  app.get(
+    `${dbBase}/objects/:name/rows`,
+    wrap(async (req, res) => {
+      const { conn, adapter } = resolveConnection(req.params.id);
+      let filter;
+      if (req.query.filter) {
+        try {
+          filter = JSON.parse(String(req.query.filter));
+        } catch {
+          throw new Error('Filter must be JSON');
+        }
+      }
+      const sort = req.query.sort ? { column: String(req.query.sort), dir: req.query.dir === 'desc' ? 'desc' : 'asc' } : null;
+      res.json(
+        await adapter.rows(conn, req.params.db, req.params.name, {
+          skip: Number(req.query.skip || 0),
+          limit: Number(req.query.limit || 50),
+          filter,
+          sort,
+        }),
+      );
+    }),
+  );
+
+  app.post(
+    `${dbBase}/query`,
+    wrap(async (req, res) => {
+      const { conn, adapter } = resolveConnection(req.params.id);
+      res.json(await adapter.query(conn, req.params.db, req.body?.text, { limit: req.body?.limit }));
+    }),
+  );
+
+  app.get(
+    `${dbBase}/graph`,
+    wrap(async (req, res) => {
+      const { conn, adapter } = resolveConnection(req.params.id);
+      res.json(await adapter.graph(conn, req.params.db));
+    }),
+  );
+
+  // ---- Assistant (optional, OpenRouter). Drafts only; never executes. ----
+  app.get('/api/ai/status', (_req, res) => res.json(aiStatus()));
+
+  app.post(
+    '/api/ai/query',
+    wrap(async (req, res) => {
+      res.json(await draftQuery(req.body || {}));
+    }),
+  );
+
+  app.post(
+    '/api/ai/test',
+    wrap(async (_req, res) => {
+      res.json(await testAi());
+    }),
+  );
+
+  app.post(
+    '/api/ai/explain',
+    wrap(async (req, res) => {
+      res.json(await explainSchema(req.body || {}));
     }),
   );
 
@@ -224,10 +335,37 @@ export function createApp() {
     '/api/records/:id/decrypt-open',
     wrap(async (req, res) => {
       const dest = tempDecryptDir(req.params.id);
-      const result = await decryptRecord(req.params.id, dest);
+      const result = await decryptRecord(req.params.id, dest, req.body?.passphrase);
       res.json(revealPath(result.extractDir));
     }),
   );
+
+  app.post(
+    '/api/records/:id/verify',
+    wrap(async (req, res) => {
+      res.json(await verifyRecord(req.params.id, { passphrase: req.body?.passphrase }));
+    }),
+  );
+
+  app.post(
+    '/api/records/:id/restore/preview',
+    wrap(async (req, res) => {
+      res.json(await previewRestore({ ...(req.body || {}), recordId: req.params.id }));
+    }),
+  );
+
+  app.post(
+    '/api/records/:id/restore/execute',
+    wrap(async (req, res) => {
+      res.json(await executeRestore({ ...(req.body || {}), recordId: req.params.id }));
+    }),
+  );
+
+  app.get('/api/audit/writes', (_req, res) => {
+    const rotations = listRotationAudit().map((r) => ({ ...r, kind: r.kind || 'rotate' }));
+    const rows = [...listWriteAudit(), ...rotations].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    res.json(rows.slice(0, 300));
+  });
 
   app.post(
     '/api/records/import',
@@ -236,9 +374,17 @@ export function createApp() {
     }),
   );
 
+  const assertMongoTarget = (body) => {
+    const conn = getConnection(body?.connectionId);
+    if (conn && conn.engine && conn.engine !== 'mongodb') {
+      throw new Error('Password rotate works on MongoDB connections only');
+    }
+  };
+
   app.post(
     '/api/rotate/preview',
     wrap(async (req, res) => {
+      assertMongoTarget(req.body);
       res.json(await previewRotation(req.body || {}));
     }),
   );
@@ -246,6 +392,7 @@ export function createApp() {
   app.post(
     '/api/rotate/execute',
     wrap(async (req, res) => {
+      assertMongoTarget(req.body);
       res.json(await executeRotation(req.body || {}));
     }),
   );
@@ -260,7 +407,7 @@ export function createApp() {
     }),
   );
 
-  app.get('/api/settings', (_req, res) => res.json(getSettings()));
+  app.get('/api/settings', (_req, res) => res.json(publicSettings()));
 
   app.put('/api/settings', (req, res) => {
     res.json(saveSettings(req.body || {}));

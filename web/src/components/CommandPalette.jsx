@@ -1,108 +1,195 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Database, FolderArchive, KeyRound, LayoutDashboard, Settings, Share2, Workflow } from 'lucide-react';
+import {
+  Activity,
+  CornerDownLeft,
+  FolderArchive,
+  KeyRound,
+  Moon,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Sparkles,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { API } from '../api.js';
 import { useApp } from '../state/AppState.jsx';
+import { useTheme } from '../state/Theme.jsx';
+import { NAV } from '../lib/nav.js';
+import { EngineLogo } from './EngineLogo.jsx';
+import { Kbd } from './ui.jsx';
+import { cn } from '../lib/cn.js';
+import { engineOf } from '../lib/engines.js';
 
-const LINKS = [
-  { id: 'overview', label: 'Overview', to: '/', icon: LayoutDashboard },
-  { id: 'flow', label: 'Flow map', to: '/flow', icon: Workflow },
-  { id: 'browse', label: 'Browse', to: '/browse', icon: Database },
-  { id: 'backups', label: 'Backups', to: '/backups', icon: FolderArchive },
-  { id: 'rotate', label: 'Password rotate', to: '/rotate', icon: KeyRound },
-  { id: 'settings', label: 'Settings', to: '/settings', icon: Settings },
-];
+const EVENT = 'bs:open-palette';
+export function openPalette() {
+  window.dispatchEvent(new Event(EVENT));
+}
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
+  const [active, setActive] = useState(0);
+  const listRef = useRef(null);
   const navigate = useNavigate();
-  const { connections, openSheet } = useApp();
+  const { connections, jobs, openSheet, openAssistant, refresh, checkHealth } = useApp();
+  const { toggle } = useTheme();
 
   useEffect(() => {
+    const show = () => {
+      setOpen(true);
+      setQ('');
+      setActive(0);
+    };
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      const k = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && k === 'k') {
         e.preventDefault();
         setOpen((v) => !v);
         setQ('');
+        setActive(0);
+      }
+      if ((e.metaKey || e.ctrlKey) && k === 'j') {
+        e.preventDefault();
+        openAssistant({});
       }
       if (e.key === 'Escape') setOpen(false);
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+    window.addEventListener(EVENT, show);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener(EVENT, show);
+    };
+  }, [openAssistant]);
 
   const items = useMemo(() => {
-    const extra = connections.map((c) => ({
-      id: c.id,
-      label: c.name,
-      hint: 'Connection',
-      to: `/browse/${c.id}`,
-      icon: Share2,
-    }));
     const all = [
-      ...LINKS,
-      { id: 'new-conn', label: 'New connection', action: () => openSheet({ type: 'connection' }), icon: Share2 },
-      { id: 'new-job', label: 'New backup job', action: () => openSheet({ type: 'job', job: {} }), icon: FolderArchive },
-      ...extra,
+      ...NAV.map((n) => ({ id: `nav-${n.to}`, group: 'Go to', label: n.label, icon: n.icon, run: () => navigate(n.to) })),
+      { id: 'new-conn', group: 'Actions', label: 'New connection', icon: Plus, run: () => openSheet({ type: 'connection' }) },
+      { id: 'new-job', group: 'Actions', label: 'New backup job', icon: FolderArchive, run: () => openSheet({ type: 'job', job: {} }) },
+      { id: 'ask', group: 'Actions', label: 'Ask the assistant', hint: 'Ctrl J', icon: Sparkles, run: () => openAssistant({}) },
+      {
+        id: 'health',
+        group: 'Actions',
+        label: 'Check all connections',
+        icon: Activity,
+        run: async () => {
+          await checkHealth();
+          toast.success('Health check finished');
+        },
+      },
+      { id: 'theme', group: 'Actions', label: 'Toggle light / dark', icon: Moon, run: toggle },
+      { id: 'rotate', group: 'Actions', label: 'Rotate passwords (MongoDB)', icon: KeyRound, run: () => navigate('/rotate') },
+      ...connections.map((c) => ({
+        id: `c-${c.id}`,
+        group: 'Connections',
+        label: c.name,
+        hint: engineOf(c.engine).label,
+        logo: c.engine,
+        run: () => navigate(`/browse/${c.id}`),
+      })),
+      ...jobs.flatMap((j) => [
+        {
+          id: `run-${j.id}`,
+          group: 'Backup jobs',
+          label: `Run “${j.name}” now`,
+          icon: Play,
+          run: async () => {
+            toast.promise(API.jobs.run(j.id).then(refresh), { loading: `Backing up ${j.name}…`, success: 'Backup finished', error: (e) => e.message });
+          },
+        },
+        { id: `edit-${j.id}`, group: 'Backup jobs', label: `Edit “${j.name}”`, icon: Pencil, run: () => openSheet({ type: 'job', job: j }) },
+      ]),
     ];
     const needle = q.trim().toLowerCase();
     if (!needle) return all;
-    return all.filter((item) => item.label.toLowerCase().includes(needle));
-  }, [connections, openSheet, q]);
+    return all.filter((i) => `${i.label} ${i.hint || ''} ${i.group}`.toLowerCase().includes(needle));
+  }, [connections, jobs, openSheet, openAssistant, navigate, q, toggle, refresh, checkHealth]);
+
+  useEffect(() => setActive(0), [q]);
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-idx="${active}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
 
   const go = (item) => {
     setOpen(false);
-    if (item.action) item.action();
-    else if (item.to) navigate(item.to);
+    item?.run?.();
   };
 
+  let lastGroup = null;
   return (
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-[70] grid place-items-start bg-black/50 p-4 pt-[12vh]"
+          className="fixed inset-0 z-[70] bg-black/45 p-4 pt-[12vh] backdrop-blur-[2px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={() => setOpen(false)}
         >
           <motion.div
-            initial={{ y: 8, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
+            initial={{ y: 8, opacity: 0, scale: 0.98 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 8, opacity: 0 }}
-            className="mx-auto w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-[#0f1e26] shadow-2xl"
+            transition={{ duration: 0.14 }}
+            className="mx-auto w-full max-w-xl overflow-hidden rounded-xl border border-line-strong bg-surface shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Jump to a module, connection, or action"
-              className="w-full border-b border-line bg-transparent px-4 py-3 text-sm outline-none"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && items[0]) go(items[0]);
-              }}
-            />
-            <div className="max-h-80 overflow-auto p-2">
-              {items.map((item) => {
+            <div className="flex items-center gap-2.5 border-b border-line px-4">
+              <Search size={16} className="text-subtle" />
+              <input
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search pages, connections, jobs, actions…"
+                className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-subtle"
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setActive((a) => Math.min(items.length - 1, a + 1));
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setActive((a) => Math.max(0, a - 1));
+                  }
+                  if (e.key === 'Enter') go(items[active]);
+                }}
+              />
+              <Kbd>Esc</Kbd>
+            </div>
+            <div ref={listRef} className="max-h-[52vh] overflow-auto p-1.5">
+              {items.map((item, idx) => {
                 const Icon = item.icon;
+                const header = item.group !== lastGroup ? item.group : null;
+                lastGroup = item.group;
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => go(item)}
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-white/5"
-                  >
-                    <Icon size={16} className="text-leaf" />
-                    <span>{item.label}</span>
-                    {item.hint ? <span className="ml-auto text-xs text-mist">{item.hint}</span> : null}
-                  </button>
+                  <div key={item.id}>
+                    {header ? <div className="px-2.5 pb-1 pt-2.5 text-[11px] font-medium text-subtle">{header}</div> : null}
+                    <button
+                      type="button"
+                      data-idx={idx}
+                      onMouseEnter={() => setActive(idx)}
+                      onClick={() => go(item)}
+                      className={cn('flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-[13px]', idx === active ? 'bg-surface-2 text-fg' : 'text-muted')}
+                    >
+                      {item.logo ? <EngineLogo engine={item.logo} size={15} /> : Icon ? <Icon size={15} className={idx === active ? 'text-primary' : ''} /> : null}
+                      <span className="truncate">{item.label}</span>
+                      {item.hint ? <span className="ml-auto text-[11px] text-subtle">{item.hint}</span> : null}
+                      {idx === active ? <CornerDownLeft size={13} className={cn('text-subtle', item.hint ? 'ml-2' : 'ml-auto')} /> : null}
+                    </button>
+                  </div>
                 );
               })}
-              {!items.length ? <p className="px-3 py-6 text-center text-sm text-mist">Nothing matches</p> : null}
+              {!items.length ? <p className="px-3 py-8 text-center text-[13px] text-subtle">Nothing matches “{q}”</p> : null}
             </div>
-            <div className="border-t border-line px-4 py-2 text-[11px] text-mist">Ctrl / ⌘ K</div>
+            <div className="flex items-center gap-3 border-t border-line px-4 py-2 text-[11px] text-subtle">
+              <span className="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd> move</span>
+              <span className="flex items-center gap-1"><Kbd>Enter</Kbd> open</span>
+              <span className="ml-auto flex items-center gap-1"><Kbd>Ctrl J</Kbd> assistant</span>
+            </div>
           </motion.div>
         </motion.div>
       ) : null}

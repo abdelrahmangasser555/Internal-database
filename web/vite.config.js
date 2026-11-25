@@ -20,5 +20,15 @@ export default defineConfig({
   build: {
     outDir: path.join(dir, 'dist'),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          flow: ['@xyflow/react', '@dagrejs/dagre'],
+          motion: ['framer-motion'],
+        },
+      },
+    },
   },
 });

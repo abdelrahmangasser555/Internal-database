@@ -1,48 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
     <title>Backup Service</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/svg+xml" href="/brand/mark.svg" />
     <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              ink: 'rgb(6 16 24 / <alpha-value>)',
-              'ink-2': 'rgb(10 24 32 / <alpha-value>)',
-              panel: 'rgb(16 32 41 / <alpha-value>)',
-              'panel-2': 'rgb(21 40 51 / <alpha-value>)',
-              line: 'rgb(148 178 188 / <alpha-value>)',
-              leaf: 'rgb(0 237 100 / <alpha-value>)',
-              'leaf-dark': 'rgb(0 104 74 / <alpha-value>)',
-              mint: 'rgb(198 255 216 / <alpha-value>)',
-              foam: 'rgb(238 248 242 / <alpha-value>)',
-              mist: 'rgb(138 163 173 / <alpha-value>)',
-              warn: 'rgb(255 192 16 / <alpha-value>)',
-              danger: 'rgb(255 107 107 / <alpha-value>)',
-              sky: 'rgb(125 211 252 / <alpha-value>)',
-            },
-            fontFamily: {
-              sans: ['IBM Plex Sans', 'Segoe UI', 'Helvetica', 'Arial', 'sans-serif'],
-              display: ['Outfit', 'IBM Plex Sans', 'sans-serif'],
-              mono: ['IBM Plex Mono', 'Consolas', 'Fira Code', 'monospace'],
-            },
-          },
-        },
-      };
+      // Apply the saved theme before first paint (dark by default).
+      (function () {
+        try {
+          var t = localStorage.getItem('bs-theme') || 'dark';
+          if (t === 'system') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          document.documentElement.dataset.theme = t;
+        } catch (e) {}
+      })();
     </script>
-    <link rel="stylesheet" href="/assets/app.css" />
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/assets/app.js"></script>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
