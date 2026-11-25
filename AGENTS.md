@@ -1,12 +1,12 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in **backup-service** (local MongoDB backup scheduler, Compass-style browser, password rotation).
+Guidance for AI coding agents working in **backup-service** (local backup scheduler, explorer and restore tool for MongoDB, PostgreSQL, MySQL/MariaDB, SQLite and SQL Server; MongoDB password rotation).
 
 ## Project summary
 
 | Item | Detail |
 |------|--------|
-| Runtime | Node.js **≥ 20**, ES modules (`"type": "module"`) |
+| Runtime | Node.js **≥ 20**, ES modules (`"type": "module"`). SQLite needs **≥ 22.13** (`node:sqlite`) |
 | Server | Express 5, localhost dashboard on `APP_PORT` (default **4780**) |
 | Data | JSON files under `data/` (gitignored); device-local only |
 | Platforms | Windows and Ubuntu (autostart / service scripts) |
@@ -19,7 +19,7 @@ User-facing docs: `README.md`.
 npm install          # dependencies
 npm start            # builds UI if needed, then dashboard + scheduler
 npm run dev          # Express API (4780) + Vite UI (5173) with HMR
-npm run build:ui     # production dashboard into web/dist
+npm run build:ui     # production dashboard into web/dist (Vite; cross-platform)
 npm run worker       # headless scheduler only (src/worker.js)
 npm run install:service
 npm run uninstall:service
@@ -37,9 +37,18 @@ src/
   worker.js         # scheduler only; exits if lock held
   server.js         # Express app + /api/* routes; static UI from web/dist (SPA)
   core/
-    store.js        # JSON persistence (connections, jobs, records, settings, audit)
-    backup.js       # read-only Mongo dumps, zip, optional encryption
-    mongo.js        # connection test, browse DBs/collections/docs (Compass-like)
+    store.js        # JSON persistence (connections, jobs, records, settings, audits)
+    engines.js      # engine registry, URI detection, URI masking
+    adapters/       # one module per engine behind a shared interface
+      index.js      #   adapterFor(), resolveConnection(), health checks
+      sqlsafe.js    #   read-only SQL guard, value encoding, FK ordering
+      postgres.js, mysql.js (MySQL + MariaDB), sqlite.js, mssql.js, mongo.js
+    backup.js       # read-only dumps via adapters, zip, checksums, encryption, retention
+    archive.js      # open/decrypt backup archives, SHA-256 helpers
+    verify.js       # integrity checks for a backup record
+    restore.js      # preview + execute restore (explicit write path)
+    ai.js           # optional OpenRouter assistant (drafts read-only queries; never executes)
+    mongo.js        # Mongo client cache, browse helpers (used by the Mongo adapter and Rotate)
     schedule.js     # node-cron, next-run computation
     rotate.js       # password rotation (writes hashes only)
     crypto.js       # master key, URI encryption, backup passphrase AES-256-GCM
@@ -63,7 +72,9 @@ scripts/
 1. **Two processes, one lock** — `index.js` and `worker.js` both call `acquireLock()`. Only one runs `startScheduler()`. A second `index.js` instance can still serve the dashboard without owning the scheduler.
 2. **API surface** — New HTTP features belong in `server.js` using the existing `wrap()` helper (async errors → `400` + `{ error }`). Keep JSON body limit in mind (`2mb`).
 3. **Persistence** — `store.js` uses atomic writes (`*.tmp` + rename, mode `0o600`). Connection URIs are stored encrypted (`uriEnc`); API returns masked/public shapes unless `includeUri` is used internally.
-4. **Backups** — Must stay **read-only** toward source MongoDB (no writes to customer DBs). Optional job passphrases produce `.zip.enc`; decryption lives in `backup.js` / dashboard.
+4. **Backups** — Must stay **read-only** toward every source database (no writes to customer DBs). Dumps go through `adapter.dump()` using read-only snapshots. Optional job passphrases produce `.zip.enc`; decryption lives in `archive.js` / `backup.js`. Archive format `backup-service-v2` adds `checksums.json` and `tables/` folders; the v1 Mongo layout (`collections/`) must keep opening, verifying and restoring.
+4a. **Explorer queries** — Anything user- or AI-typed goes through `assertReadOnlySql()` (SQL) or `parseMongoQuery()` (Mongo) **and** runs inside a read-only transaction/handle. Never weaken either layer.
+4b. **Restore** — The second explicit write path (with Rotate). It only writes into empty or new tables/collections, needs the typed target name, and logs to `data/write-audit.json`.
 5. **Rotation** — `rotate.js` updates password **hashes** only; default notify email is off unless settings enable it.
 6. **UI** — React dashboard in `web/src/` (Vite, Tailwind, Lucide, Framer Motion, `@xyflow/react`). After API changes, update `web/src/api.js` and the relevant page/sheet. `npm run build:ui` writes `web/dist`; Express serves that as an SPA. `npm run dev` proxies `/api` from Vite `:5173` to Express `:4780`.
 
@@ -77,6 +88,8 @@ Copy `.env.example` → `.env`. Never hardcode or commit secrets.
 | `SES_FROM_EMAIL` | Verified SES identity |
 | `APP_PORT` | Dashboard port (binds localhost) |
 | `BACKUP_MASTER_KEY` | Optional; else `data/master.key` is created |
+| `OPENROUTER_API_KEY` | Optional assistant key (or saved encrypted from Settings as `aiKeyEnc`; never returned by the API) |
+| `OPENROUTER_MODEL` | Optional; default `deepseek/deepseek-v4.1-flash` |
 
 SES sandbox only sends to verified recipients.
 
@@ -91,7 +104,7 @@ SES sandbox only sends to verified recipients.
 ## Safety rules for agents
 
 1. **Do not** commit `.env`, `data/`, backups, or `data/master.key`.
-2. **Do not** add write operations to target MongoDB during backup/browse flows unless the user explicitly requests a new feature and it is clearly scoped (rotation is the intentional write path).
+2. **Do not** add write operations to target databases during backup/browse/query/assistant flows unless the user explicitly requests a new feature and it is clearly scoped (Rotate and Restore are the intentional write paths). The assistant must never execute anything itself.
 3. **Do not** expose connection URIs in logs or API responses without masking.
 4. **Do not** bind the dashboard to `0.0.0.0` unless the user asks; product intent is local-only.
 5. When changing encryption or file formats, consider backward compatibility for existing `.zip.enc` and `data/*.json`.
@@ -103,11 +116,14 @@ SES sandbox only sends to verified recipients.
 | New REST endpoint | `server.js` + `web/src/api.js` + the matching page/sheet |
 | Backup behavior / formats | `core/backup.js`, `core/crypto.js` |
 | Cron / scheduling | `core/schedule.js`, job fields in `store.js` |
-| Mongo browser | `core/mongo.js`, `web/src/pages/Browse.jsx` |
+| New database engine | `core/engines.js`, a new `core/adapters/<engine>.js`, register it in `adapters/index.js`, add a logo + entry in `web/src/lib/engines.js` |
+| Explorer | `core/adapters/*`, `web/src/pages/Browse.jsx`, `web/src/components/explore/` |
+| Verify / restore | `core/verify.js`, `core/restore.js`, `web/src/components/RecordSheet.jsx`, `RestoreSheet.jsx` |
+| Assistant | `core/ai.js`, `web/src/components/AssistantSheet.jsx` |
 | Email templates | `core/email.js` |
 | Settings / defaults | `store.js` (`settings.json`), `/api/meta` in `server.js` |
 | Boot at login | `core/autostart.js`, `scripts/install-service.js` |
-| Dashboard UX / flow canvas | `web/src/` (`pages/`, `components/`, `components/flow/`) |
+| Dashboard UX / flow canvas | `web/src/` (`pages/`, `components/`, `components/flow/`). Design tokens live in `web/src/index.css` (dark default + light); use the token classes (`bg-surface`, `text-muted`, `border-line`, `text-primary`…) rather than raw colours. Logos come from svgl.app into `web/public/brands/` |
 
 ## Optional Cursor rules
 
