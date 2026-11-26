@@ -20,6 +20,7 @@ export function graphToSchema(graph, engine = 'any') {
         required: c.nullable === false || Boolean(c.pk),
         note: c.note || '',
         presence: c.presence,
+        children: [],
       })),
     })),
     relations: (graph?.relations || []).map((r, i) => ({
@@ -69,8 +70,8 @@ export function relationFindings(schema, rel) {
 }
 
 export const COLUMN_TYPES = {
-  mongodb: ['objectId', 'string', 'number', 'boolean', 'date', 'array', 'object', 'decimal', 'binary'],
-  sql: ['uuid', 'integer', 'bigint', 'text', 'varchar(255)', 'boolean', 'timestamptz', 'date', 'numeric', 'jsonb', 'bytea'],
+  mongodb: ['objectId', 'string', 'number', 'boolean', 'date', 'decimal', 'binary', 'array', 'object'],
+  sql: ['uuid', 'integer', 'bigint', 'text', 'varchar(255)', 'boolean', 'timestamptz', 'date', 'numeric', 'json', 'jsonb', 'bytea'],
 };
 
 export function typesFor(engine) {

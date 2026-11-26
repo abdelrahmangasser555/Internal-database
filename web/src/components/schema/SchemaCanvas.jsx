@@ -14,11 +14,39 @@ import {
 } from '@xyflow/react';
 import { applyNodeChanges } from '@xyflow/system';
 import dagre from '@dagrejs/dagre';
-import { AlertTriangle, Check, Copy, GripVertical, Info, KeyRound, Link2, Network, Plus, Search, StickyNote, Table2, Trash2, Unlink, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronRight,
+  Copy,
+  GripVertical,
+  Info,
+  KeyRound,
+  Link2,
+  Network,
+  Plus,
+  Search,
+  StickyNote,
+  Table2,
+  Trash2,
+  Unlink,
+  X,
+} from 'lucide-react';
 import { useTheme } from '../../state/Theme.jsx';
 import { engineOf, shortName } from '../../lib/engines.js';
 import { compact } from '../../lib/format.js';
 import { objectFindings, relationFindings, severityOf, typesFor } from '../../lib/schema.js';
+import {
+  addChild,
+  addSibling,
+  canNestType,
+  countRows,
+  flattenColumns,
+  pathKey,
+  removeAtPath,
+  updateAtPath,
+  walkColumns,
+} from '../../lib/schemaColumns.js';
 import { Badge, Input, Kbd, Spinner } from '../ui.jsx';
 import { cn } from '../../lib/cn.js';
 
@@ -72,6 +100,30 @@ function DirectInput({ value, onCommit, className, placeholder, list, ariaLabel,
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     />
+  );
+}
+
+function FieldTypeSelect({ value, types, onChange, className }) {
+  const options = useMemo(() => {
+    const v = value || types[0] || 'string';
+    if (v && !types.includes(v)) return [v, ...types];
+    return types;
+  }, [types, value]);
+  return (
+    <select
+      value={value || options[0]}
+      aria-label="Field type"
+      className={cn(inputish, 'nodrag nowheel w-[104px] shrink-0 rounded-sm border border-line/60 bg-surface px-1 font-mono text-[10.5px] text-fg', className)}
+      onChange={(e) => onChange(e.target.value)}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {options.map((t) => (
+        <option key={t} value={t}>
+          {t}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -191,11 +243,26 @@ function SchemaMenu({ menu, items, onClose }) {
 function TableNodeInner({ data, selected }) {
   const { picked, linkedByTable, openMenu } = useContext(CanvasUi);
   const editable = data.editable;
-  const cols = data.columns.slice(0, data.maxCols);
   const linkedCols = linkedByTable.get(data.table);
   const sev = data.severity;
   const types = data.types || [];
-  const listId = `types-${data.table}`;
+  const [expanded, setExpanded] = useState(() => new Set(['*']));
+  const fieldRows = useMemo(
+    () => flattenColumns(data.columns, { expanded, max: data.maxCols }),
+    [data.columns, data.maxCols, expanded],
+  );
+  const totalRows = useMemo(() => countRows(data.columns, new Set(['*'])), [data.columns]);
+  const hiddenRows = Math.max(0, totalRows - fieldRows.length);
+  const toggleExpand = (key, canNest, hasChildren) => {
+    if (!canNest && !hasChildren) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.add('*');
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   return (
     <div
       className={cn(
@@ -213,13 +280,6 @@ function TableNodeInner({ data, selected }) {
         openMenu?.({ kind: 'table', table: data.table, x: e.clientX, y: e.clientY });
       }}
     >
-      {types.length ? (
-        <datalist id={listId}>
-          {types.map((t) => (
-            <option key={t} value={t} />
-          ))}
-        </datalist>
-      ) : null}
       <div className="flex h-10 cursor-grab items-center gap-1.5 border-b border-line bg-surface-2 px-2 active:cursor-grabbing">
         <GripVertical size={14} className="shrink-0 text-subtle" aria-hidden />
         {editable ? (
@@ -280,19 +340,52 @@ function TableNodeInner({ data, selected }) {
       ) : data.note ? (
         <div className="border-b border-line px-3 py-1 text-[10.5px] leading-4 text-muted">{data.note}</div>
       ) : null}
-      {cols.map((c) => {
-        const active = picked?.table === data.table && picked?.column === c.name;
-        const linked = linkedCols?.has(c.name);
-        const colSev = data.columnSeverity?.[c.name];
+      {editable && data.documentCollection ? (
+        <div className="nodrag border-b border-line bg-surface-2/40 px-2 py-1.5">
+          <label className="flex cursor-pointer items-start gap-2 text-[10.5px] leading-4 text-muted">
+            <input
+              type="checkbox"
+              className="nodrag mt-0.5"
+              checked={!data.strict}
+              onChange={(e) => data.onStrict?.(!e.target.checked)}
+              onPointerDown={(e) => e.stopPropagation()}
+            />
+            <span>
+              <span className="font-medium text-fg">Allow extra fields</span>
+              <span className="text-subtle"> (MongoDB </span>
+              <code className="font-mono text-[10px] text-subtle">strict: false</code>
+              <span className="text-subtle">) — listed fields are hints, not a closed schema.</span>
+            </span>
+          </label>
+          {!data.strict ? (
+            <DirectArea
+              value={data.shapeDescription || ''}
+              placeholder="Describe what you expect in this collection when the shape is open-ended…"
+              ariaLabel="Shape description"
+              className="mt-1.5 w-full rounded-sm border border-line/70 px-2 py-1 text-[10.5px]"
+              onCommit={(text) => data.onShapeDescription?.(text)}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      {fieldRows.map((row) => {
+        const c = row.column;
+        const colKey = row.key;
+        const active = picked?.table === data.table && picked?.column === colKey;
+        const linked = linkedCols?.has(c.name) || linkedCols?.has(colKey);
+        const colSev = data.columnSeverity?.[colKey] || data.columnSeverity?.[c.name];
+        const handleId = pathKey(row.path);
+        const pad = 8 + row.depth * 14;
+        const topLevel = row.depth === 0;
         return (
           <div
-            key={c.name}
+            key={colKey}
             className={cn(
-              'relative flex w-full items-center gap-1 px-2 text-[11.5px]',
+              'relative flex w-full items-center gap-0.5 text-[11.5px]',
               active ? 'bg-primary/16 text-fg' : linked ? 'bg-primary/8' : colSev === 'error' ? 'bg-danger/10' : colSev === 'warn' ? 'bg-warn/10' : editable ? '' : 'hover:bg-surface-2/80',
             )}
-            style={{ height: ROW_H, boxShadow: colSev ? `inset 3px 0 0 ${SEV_STROKE[colSev]}` : undefined }}
-            onClick={() => data.onPick?.({ table: data.table, column: c.name })}
+            style={{ height: ROW_H, paddingLeft: pad, paddingRight: 6, boxShadow: colSev ? `inset 3px 0 0 ${SEV_STROKE[colSev]}` : undefined }}
+            onClick={() => data.onPick?.({ table: data.table, column: colKey })}
             onContextMenu={(e) => {
               if (!editable) return;
               e.preventDefault();
@@ -300,33 +393,52 @@ function TableNodeInner({ data, selected }) {
               openMenu?.({
                 kind: 'field',
                 table: data.table,
-                column: c.name,
+                column: colKey,
+                path: colKey,
+                type: c.type,
                 pk: c.pk,
                 unique: c.unique,
                 required: c.required,
+                canNest: canNestType(c.type),
                 x: e.clientX,
                 y: e.clientY,
               });
             }}
           >
-            <Handle
-              type="target"
-              id={`${c.name}-t`}
-              position={Position.Left}
-              className={cn('!border-0', editable ? '!h-2.5 !w-2.5 !bg-primary' : '!h-1.5 !w-1.5 !bg-transparent')}
-            />
+            {topLevel ? (
+              <Handle
+                type="target"
+                id={`${handleId}-t`}
+                position={Position.Left}
+                className={cn('!border-0', editable ? '!h-2.5 !w-2.5 !bg-primary' : '!h-1.5 !w-1.5 !bg-transparent')}
+              />
+            ) : (
+              <span className="w-2 shrink-0" />
+            )}
             <button
               type="button"
-              className="nodrag grid w-4 shrink-0 place-items-center text-subtle hover:text-fg"
-              title={c.pk ? 'primary key' : 'Mark primary key'}
+              className={cn('nodrag grid h-5 w-5 shrink-0 place-items-center', row.canNest || row.hasChildren ? 'text-muted hover:text-fg' : 'invisible')}
+              title={row.open ? 'Collapse nested fields' : 'Expand nested fields'}
               onClick={(e) => {
                 e.stopPropagation();
-                if (editable) data.onTogglePk?.(c.name);
-                else data.onPick?.({ table: data.table, column: c.name });
+                toggleExpand(colKey, row.canNest, row.hasChildren);
               }}
               onPointerDown={(e) => e.stopPropagation()}
             >
-              {c.pk ? <KeyRound size={11} className="text-warn" /> : c.fk ? <Link2 size={11} className="text-primary" /> : <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />}
+              <ChevronRight size={11} className={cn('transition', row.open && 'rotate-90')} />
+            </button>
+            <button
+              type="button"
+              className="nodrag grid w-4 shrink-0 place-items-center text-subtle hover:text-fg"
+              title={c.pk ? 'primary key' : topLevel ? 'Mark primary key' : 'Field options'}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (editable && topLevel) data.onTogglePk?.(colKey);
+                else data.onPick?.({ table: data.table, column: colKey });
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {c.pk ? <KeyRound size={11} className="text-warn" /> : c.fk ? <Link2 size={11} className="text-primary" /> : c.required ? <span className="text-[11px] font-bold text-warn">*</span> : <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />}
             </button>
             {editable ? (
               <>
@@ -334,23 +446,32 @@ function TableNodeInner({ data, selected }) {
                   value={c.name}
                   ariaLabel="Field name"
                   className={cn('min-w-0 flex-1', c.pk && 'font-medium')}
-                  onCommit={(name) => data.onRenameField?.(c.name, name.replace(/\s+/g, '_'))}
+                  onCommit={(name) => data.onRenameField?.(colKey, name.replace(/\s+/g, '_'))}
                 />
-                <DirectInput
-                  value={c.type}
-                  ariaLabel="Field type"
-                  list={listId}
-                  mono
-                  className="w-[92px] shrink-0 text-right text-[10.5px] text-subtle"
-                  onCommit={(type) => data.onType?.(c.name, type)}
-                />
+                <FieldTypeSelect value={c.type} types={types} onChange={(type) => data.onType?.(colKey, type)} />
+                {row.canNest ? (
+                  <button
+                    type="button"
+                    className="nodrag grid h-5 w-5 shrink-0 place-items-center text-info hover:bg-info/10"
+                    title="Add nested field"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      data.onAddSubfield?.(colKey);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <Plus size={10} />
+                  </button>
+                ) : (
+                  <span className="w-5 shrink-0" />
+                )}
                 <button
                   type="button"
                   className="nodrag grid h-5 w-5 shrink-0 place-items-center text-subtle hover:text-danger"
                   title="Remove field"
                   onClick={(e) => {
                     e.stopPropagation();
-                    data.onRemoveField?.(c.name);
+                    data.onRemoveField?.(colKey);
                   }}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
@@ -361,18 +482,21 @@ function TableNodeInner({ data, selected }) {
               <>
                 <span className={cn('min-w-0 flex-1 truncate', c.pk && 'font-medium')}>{c.name}</span>
                 <span className="ml-auto max-w-[110px] truncate font-mono text-[10.5px] text-subtle">{c.type}</span>
+                {c.required ? <span className="ml-1 text-[10px] font-bold text-warn">*</span> : null}
               </>
             )}
-            <Handle
-              type="source"
-              id={`${c.name}-s`}
-              position={Position.Right}
-              className={cn('!border-0', editable ? '!h-2.5 !w-2.5 !bg-primary' : '!h-1.5 !w-1.5 !bg-transparent')}
-            />
+            {topLevel ? (
+              <Handle
+                type="source"
+                id={`${handleId}-s`}
+                position={Position.Right}
+                className={cn('!border-0', editable ? '!h-2.5 !w-2.5 !bg-primary' : '!h-1.5 !w-1.5 !bg-transparent')}
+              />
+            ) : null}
           </div>
         );
       })}
-      {data.columns.length > data.maxCols ? <div className="px-3 py-1 text-[10.5px] text-subtle">+{data.columns.length - data.maxCols} more</div> : null}
+      {hiddenRows > 0 ? <div className="px-3 py-1 text-[10.5px] text-subtle">+{hiddenRows} more (expand parents or scroll)</div> : null}
     </div>
   );
 }
@@ -432,9 +556,13 @@ const NoteNode = memo(NoteNodeInner, nodeEq);
 const nodeTypes = { table: TableNode, note: NoteNode };
 const EMPTY_LINKED = new Map();
 
-function tableHeight(t, maxCols, editable) {
+function tableHeight(t, maxCols, editable, engine) {
   const note = t.note || editable ? 22 : 0;
-  return HEAD_H + note + Math.min(t.columns.length, maxCols) * ROW_H + (t.columns.length > maxCols ? 22 : 0) + 4;
+  const doc = engine === 'mongodb' || engine === 'any';
+  const flex = doc && editable ? (t.strict === false ? 56 : 30) : 0;
+  const rows = Math.min(countRows(t.columns, new Set(['*'])), maxCols);
+  const hidden = countRows(t.columns, new Set(['*'])) > maxCols;
+  return HEAD_H + note + flex + rows * ROW_H + (hidden ? 22 : 0) + 4;
 }
 
 function dagrePositions(schema, maxCols, editable) {
@@ -442,13 +570,14 @@ function dagrePositions(schema, maxCols, editable) {
   g.setGraph({ rankdir: 'LR', nodesep: 48, ranksep: 120, marginx: 24, marginy: 24 });
   g.setDefaultEdgeLabel(() => ({}));
   const objects = schema.objects || [];
-  for (const t of objects) g.setNode(t.name, { width: WIDTH, height: tableHeight(t, maxCols, editable) });
+  const engine = schema.engine || 'any';
+  for (const t of objects) g.setNode(t.name, { width: WIDTH, height: tableHeight(t, maxCols, editable, engine) });
   for (const r of schema.relations || []) if (g.hasNode(r.from) && g.hasNode(r.to)) g.setEdge(r.from, r.to);
   dagre.layout(g);
   const map = new Map();
   for (const t of objects) {
     const p = g.node(t.name);
-    if (p) map.set(t.name, { x: p.x - WIDTH / 2, y: p.y - tableHeight(t, maxCols, editable) / 2 });
+    if (p) map.set(t.name, { x: p.x - WIDTH / 2, y: p.y - tableHeight(t, maxCols, editable, engine) / 2 });
   }
   return map;
 }
@@ -459,8 +588,8 @@ function pkName(obj) {
 
 function defaultPk(engine) {
   return engine === 'mongodb' || engine === 'any'
-    ? { name: '_id', type: 'objectId', pk: true, unique: true, required: true, fk: false, note: '' }
-    : { name: 'id', type: 'uuid', pk: true, unique: true, required: true, fk: false, note: '' };
+    ? { name: '_id', type: 'objectId', pk: true, unique: true, required: true, fk: false, note: '', children: [] }
+    : { name: 'id', type: 'uuid', pk: true, unique: true, required: true, fk: false, note: '', children: [] };
 }
 
 function uniqueName(objects, base) {
@@ -475,7 +604,12 @@ function uniqueName(objects, base) {
 
 function matchesPick(rel, picked) {
   if (!picked?.column) return false;
-  return (rel.from === picked.table && rel.fromColumn === picked.column) || (rel.to === picked.table && rel.toColumn === picked.column);
+  const col = picked.column;
+  const base = col.includes('.') ? col.split('.').pop() : col;
+  return (
+    (rel.from === picked.table && (rel.fromColumn === col || rel.fromColumn === base)) ||
+    (rel.to === picked.table && (rel.toColumn === col || rel.toColumn === base))
+  );
 }
 
 function searchHits(schema, engine, q) {
@@ -487,18 +621,19 @@ function searchHits(schema, engine, q) {
     if (`${t.name} ${label} ${t.note || ''}`.toLowerCase().includes(term)) {
       out.push({ id: `t:${t.name}`, kind: 'collection', table: t.name, column: null, title: label, hint: t.kind });
     }
-    for (const c of t.columns || []) {
-      if (`${c.name} ${label}.${c.name} ${c.type || ''} ${c.note || ''}`.toLowerCase().includes(term)) {
+    walkColumns(t.columns, (c, path) => {
+      const dotted = path.join('.');
+      if (`${dotted} ${label}.${dotted} ${c.type || ''} ${c.note || ''}`.toLowerCase().includes(term)) {
         out.push({
-          id: `c:${t.name}.${c.name}`,
+          id: `c:${t.name}.${dotted}`,
           kind: 'field',
           table: t.name,
-          column: c.name,
-          title: `${label}.${c.name}`,
+          column: dotted,
+          title: `${label}.${dotted}`,
           hint: c.pk ? 'primary key' : c.fk ? 'foreign key' : c.type || 'field',
         });
       }
-    }
+    });
     if (out.length >= 48) break;
   }
   for (const f of schema.findings || []) {
@@ -592,7 +727,10 @@ function SchemaCanvasInner({
       }
       patchSchema((s) => ({
         ...s,
-        objects: [...(s.objects || []), { id: name, name, kind: base, note: '', columns: [defaultPk(s.engine)], x: point.x, y: point.y }],
+        objects: [
+          ...(s.objects || []),
+          { id: name, name, kind: base, note: '', strict: true, shapeDescription: '', columns: [defaultPk(s.engine)], x: point.x, y: point.y },
+        ],
       }));
       setFocusId(name);
     },
@@ -634,26 +772,22 @@ function SchemaCanvasInner({
   }, [editable]);
 
   const addFieldTo = useCallback(
-    (table, after) => {
+    (table, afterPath) => {
       patchSchema((s) => ({
         ...s,
-        objects: s.objects.map((o) => {
-          if (o.name !== table) return o;
-          const field = {
-            name: uniqueName(o.columns, 'field'),
-            type: typesFor(s.engine)[1] || 'string',
-            pk: false,
-            fk: false,
-            unique: false,
-            required: false,
-            note: '',
-          };
-          const columns = [...o.columns];
-          const i = after ? columns.findIndex((c) => c.name === after) : -1;
-          if (i >= 0) columns.splice(i + 1, 0, field);
-          else columns.push(field);
-          return { ...o, columns };
-        }),
+        objects: s.objects.map((o) =>
+          o.name !== table ? o : { ...o, columns: afterPath ? addSibling(o.columns, afterPath, s.engine) : addSibling(o.columns, '', s.engine) },
+        ),
+      }));
+    },
+    [patchSchema],
+  );
+
+  const addSubfieldTo = useCallback(
+    (table, parentPath) => {
+      patchSchema((s) => ({
+        ...s,
+        objects: s.objects.map((o) => (o.name !== table ? o : { ...o, columns: addChild(o.columns, parentPath, s.engine) })),
       }));
     },
     [patchSchema],
@@ -684,7 +818,19 @@ function SchemaCanvasInner({
         if (!live) return s;
         return {
           ...s,
-          objects: [...s.objects, { ...live, id: name, name, columns: live.columns.map((c) => ({ ...c })), x, y }],
+          objects: [
+            ...s.objects,
+            {
+              ...live,
+              id: name,
+              name,
+              strict: live.strict,
+              shapeDescription: live.shapeDescription,
+              columns: live.columns.map((c) => ({ ...c, children: (c.children || []).map((ch) => ({ ...ch })) })),
+              x,
+              y,
+            },
+          ],
         };
       });
       setFocusId(name);
@@ -693,7 +839,7 @@ function SchemaCanvasInner({
   );
 
   const toggleColumn = useCallback(
-    (table, col, key) => {
+    (table, path, key) => {
       patchSchema((s) => ({
         ...s,
         objects: s.objects.map((o) =>
@@ -701,8 +847,7 @@ function SchemaCanvasInner({
             ? o
             : {
                 ...o,
-                columns: o.columns.map((c) => {
-                  if (c.name !== col) return c;
+                columns: updateAtPath(o.columns, path, (c) => {
                   const on = !c[key];
                   return { ...c, [key]: on, ...(key === 'pk' && on ? { required: true } : {}) };
                 }),
@@ -714,11 +859,12 @@ function SchemaCanvasInner({
   );
 
   const removeField = useCallback(
-    (table, col) => {
+    (table, path) => {
+      const base = path?.includes('.') ? path.split('.').pop() : path;
       patchSchema((s) => ({
         ...s,
-        objects: s.objects.map((o) => (o.name !== table ? o : { ...o, columns: o.columns.filter((c) => c.name !== col) })),
-        relations: s.relations.filter((r) => !((r.from === table && r.fromColumn === col) || (r.to === table && r.toColumn === col))),
+        objects: s.objects.map((o) => (o.name !== table ? o : { ...o, columns: removeAtPath(o.columns, path) })),
+        relations: s.relations.filter((r) => !((r.from === table && (r.fromColumn === path || r.fromColumn === base)) || (r.to === table && (r.toColumn === path || r.toColumn === base)))),
       }));
     },
     [patchSchema],
@@ -809,6 +955,9 @@ function SchemaCanvasInner({
           columns: t.columns,
           rows: t.rows,
           note: t.note,
+          strict: t.strict !== false,
+          shapeDescription: t.shapeDescription || '',
+          documentCollection: engine === 'mongodb' || engine === 'any',
           severity: severityOf(of),
           findCount: of.length,
           columnSeverity,
@@ -840,14 +989,18 @@ function SchemaCanvasInner({
             h.current.setFocusId(name);
           },
           onNote: (note) => h.current.patch((s) => ({ ...s, objects: s.objects.map((o) => (o.name === id ? { ...o, note } : o)) })),
+          onStrict: (strict) => h.current.patch((s) => ({ ...s, objects: s.objects.map((o) => (o.name === id ? { ...o, strict } : o)) })),
+          onShapeDescription: (shapeDescription) =>
+            h.current.patch((s) => ({ ...s, objects: s.objects.map((o) => (o.name === id ? { ...o, shapeDescription } : o)) })),
           onAddField: () =>
             h.current.patch((s) => ({
               ...s,
-              objects: s.objects.map((o) =>
-                o.name === id
-                  ? { ...o, columns: [...o.columns, { name: `field_${o.columns.length + 1}`, type: typesFor(s.engine)[1] || 'string', pk: false, fk: false, unique: false, required: false, note: '' }] }
-                  : o,
-              ),
+              objects: s.objects.map((o) => (o.name === id ? { ...o, columns: addSibling(o.columns, '', s.engine) } : o)),
+            })),
+          onAddSubfield: (parentPath) =>
+            h.current.patch((s) => ({
+              ...s,
+              objects: s.objects.map((o) => (o.name === id ? { ...o, columns: addChild(o.columns, parentPath, s.engine) } : o)),
             })),
           onRemoveObject: () =>
             h.current.patch((s) => ({
@@ -855,40 +1008,64 @@ function SchemaCanvasInner({
               objects: s.objects.filter((o) => o.name !== id),
               relations: s.relations.filter((r) => r.from !== id && r.to !== id),
             })),
-          onTogglePk: (col) =>
+          onTogglePk: (path) =>
             h.current.patch((s) => ({
               ...s,
               objects: s.objects.map((o) =>
-                o.name !== id ? o : { ...o, columns: o.columns.map((c) => ({ ...c, pk: c.name === col ? !c.pk : c.pk })) },
+                o.name !== id
+                  ? o
+                  : {
+                      ...o,
+                      columns: updateAtPath(o.columns, path, (c) => ({ ...c, pk: !c.pk, required: !c.pk ? true : c.required })),
+                    },
               ),
             })),
-          onRenameField: (from, to) => {
+          onRenameField: (path, to) => {
             if (!to) return;
+            const fromBase = path.includes('.') ? path.split('.').pop() : path;
             h.current.patch((s) => ({
               ...s,
               objects: s.objects.map((o) =>
-                o.name !== id ? o : { ...o, columns: o.columns.map((c) => (c.name === from ? { ...c, name: to } : c)) },
+                o.name !== id
+                  ? o
+                  : {
+                      ...o,
+                      columns: updateAtPath(o.columns, path, (c) => ({ ...c, name: to })),
+                    },
               ),
               relations: s.relations.map((r) => ({
                 ...r,
-                fromColumn: r.from === id && r.fromColumn === from ? to : r.fromColumn,
-                toColumn: r.to === id && r.toColumn === from ? to : r.toColumn,
+                fromColumn: r.from === id && (r.fromColumn === path || r.fromColumn === fromBase) ? to : r.fromColumn,
+                toColumn: r.to === id && (r.toColumn === path || r.toColumn === fromBase) ? to : r.toColumn,
               })),
             }));
           },
-          onType: (col, type) =>
+          onType: (path, type) =>
             h.current.patch((s) => ({
               ...s,
               objects: s.objects.map((o) =>
-                o.name !== id ? o : { ...o, columns: o.columns.map((c) => (c.name === col ? { ...c, type } : c)) },
+                o.name !== id
+                  ? o
+                  : {
+                      ...o,
+                      columns: updateAtPath(o.columns, path, (c) => ({
+                        ...c,
+                        type,
+                        children: canNestType(type) ? c.children || [] : [],
+                      })),
+                    },
               ),
             })),
-          onRemoveField: (col) =>
+          onRemoveField: (path) => {
+            const base = path?.includes('.') ? path.split('.').pop() : path;
             h.current.patch((s) => ({
               ...s,
-              objects: s.objects.map((o) => (o.name !== id ? o : { ...o, columns: o.columns.filter((c) => c.name !== col) })),
-              relations: s.relations.filter((r) => !((r.from === id && r.fromColumn === col) || (r.to === id && r.toColumn === col))),
-            })),
+              objects: s.objects.map((o) => (o.name !== id ? o : { ...o, columns: removeAtPath(o.columns, path) })),
+              relations: s.relations.filter(
+                (r) => !((r.from === id && (r.fromColumn === path || r.fromColumn === base)) || (r.to === id && (r.toColumn === path || r.toColumn === base))),
+              ),
+            }));
+          },
         },
       };
     });
@@ -980,15 +1157,21 @@ function SchemaCanvasInner({
       ];
     }
     if (menu.kind === 'field') {
-      return [
-        { id: 'add-field', icon: Plus, label: 'Add field', run: () => addFieldTo(menu.table, menu.column) },
-        { id: 'pk', icon: KeyRound, label: 'Primary key', checked: menu.pk, run: () => toggleColumn(menu.table, menu.column, 'pk') },
-        { id: 'unique', label: 'Unique', checked: menu.unique, run: () => toggleColumn(menu.table, menu.column, 'unique') },
-        { id: 'required', label: 'Required', checked: menu.required, run: () => toggleColumn(menu.table, menu.column, 'required') },
-        'sep',
-        { id: 'delete-field', icon: Trash2, label: 'Delete field', danger: true, run: () => removeField(menu.table, menu.column) },
-        { id: 'delete-object', icon: Trash2, label: `Delete ${noun}`, danger: true, run: () => removeObject(menu.table) },
+      const items = [
+        { id: 'add-field', icon: Plus, label: 'Add field below', run: () => addFieldTo(menu.table, menu.path || menu.column) },
       ];
+      if (menu.canNest) {
+        items.push({ id: 'add-sub', icon: Plus, label: 'Add nested field', run: () => addSubfieldTo(menu.table, menu.path || menu.column) });
+      }
+      items.push(
+        { id: 'pk', icon: KeyRound, label: 'Primary key', checked: menu.pk, run: () => toggleColumn(menu.table, menu.path || menu.column, 'pk') },
+        { id: 'unique', label: 'Unique', checked: menu.unique, run: () => toggleColumn(menu.table, menu.path || menu.column, 'unique') },
+        { id: 'required', label: 'Required', checked: menu.required, run: () => toggleColumn(menu.table, menu.path || menu.column, 'required') },
+        'sep',
+        { id: 'delete-field', icon: Trash2, label: 'Delete field', danger: true, run: () => removeField(menu.table, menu.path || menu.column) },
+        { id: 'delete-object', icon: Trash2, label: `Delete ${noun}`, danger: true, run: () => removeObject(menu.table) },
+      );
+      return items;
     }
     if (menu.kind === 'note') {
       return [{ id: 'delete-note', icon: Trash2, label: 'Delete note', danger: true, run: () => removeNote(menu.noteId) }];
@@ -1004,6 +1187,7 @@ function SchemaCanvasInner({
     addObjectAt,
     addNoteAt,
     addFieldTo,
+    addSubfieldTo,
     duplicateObject,
     removeObject,
     toggleColumn,

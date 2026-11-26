@@ -202,7 +202,7 @@ export function SchemasPage() {
           <Empty
             icon={Boxes}
             title="Schema builder"
-            body="Click + to drop a collection, type on it, then drag a field dot to another to connect. Nothing here talks to a live database until you run Analyze on Explore."
+            body="Click + to add a collection, pick field types from the dropdown, nest subfields on object/array/json, and toggle MongoDB strict:false for flexible shapes. Drag field dots to connect relations."
             action={
               <Button variant="primary" onClick={() => create()} loading={busy === 'create'}>
                 <Plus size={14} /> New schema

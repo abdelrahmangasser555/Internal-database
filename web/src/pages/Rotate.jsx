@@ -34,6 +34,8 @@ export function RotatePage() {
   const [auditTo, setAuditTo] = useState('');
   const [dbs, setDbs] = useState([]);
   const [cols, setCols] = useState([]);
+  const [fieldNames, setFieldNames] = useState([]);
+  const [fieldsLoading, setFieldsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadLock = useRef(false);
@@ -111,6 +113,49 @@ export function RotatePage() {
       })
       .catch(() => setCols([]));
   }, [form.connectionId, form.database]);
+
+  useEffect(() => {
+    if (!form.connectionId || !form.database || !form.collection) {
+      setFieldNames([]);
+      return;
+    }
+    let alive = true;
+    setFieldsLoading(true);
+    API.connections
+      .describe(form.connectionId, form.database, form.collection)
+      .then((meta) => {
+        if (!alive) return;
+        const names = (meta.columns || []).map((c) => c.name).filter(Boolean);
+        setFieldNames(names);
+        setForm((p) => {
+          const pick = (current, ...candidates) => {
+            if (names.includes(current)) return current;
+            for (const c of candidates) if (names.includes(c)) return c;
+            return names[0] || current;
+          };
+          return {
+            ...p,
+            nameField: pick(p.nameField, 'name', 'fullName', 'displayName', 'firstName'),
+            emailField: pick(p.emailField, 'email', 'mail', 'emailAddress'),
+            usernameField: pick(p.usernameField, 'email', 'username', 'userName', 'login'),
+            passwordField: pick(p.passwordField, 'password', 'passwordHash', 'hash'),
+          };
+        });
+      })
+      .catch(() => alive && setFieldNames([]))
+      .finally(() => alive && setFieldsLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [form.connectionId, form.database, form.collection]);
+
+  const fieldChoices = useMemo(() => {
+    const set = new Set(fieldNames);
+    for (const key of ['nameField', 'emailField', 'usernameField', 'passwordField']) {
+      if (form[key]) set.add(form[key]);
+    }
+    return [...set].filter((n) => n !== '_id').sort((a, b) => a.localeCompare(b));
+  }, [fieldNames, form.nameField, form.emailField, form.usernameField, form.passwordField]);
 
   const set = (key) => (e) => {
     const value = e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e;
@@ -289,19 +334,64 @@ export function RotatePage() {
 
         {step === 1 ? (
           <>
-            <CardHeader title="Field mapping & password" subtitle="Tell the rotator which fields hold what, and how to build new passwords." />
+            <CardHeader
+              title="Field mapping & password"
+              subtitle={
+                fieldsLoading
+                  ? 'Reading fields from the collection…'
+                  : fieldChoices.length
+                    ? `Map to fields discovered in ${form.collection} (sampled from live documents).`
+                    : 'Pick a collection on Target first — fields come from the collection schema sample.'
+              }
+            />
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Name field">
-                <Input value={form.nameField} onChange={set('nameField')} />
+              <Field label="Name field" hint="Display name for emails and preview">
+                <Select value={form.nameField} onChange={set('nameField')} disabled={fieldsLoading || !fieldChoices.length}>
+                  {!fieldChoices.length ? <option value="">No fields yet</option> : null}
+                  {form.nameField && !fieldChoices.includes(form.nameField) ? <option value={form.nameField}>{form.nameField}</option> : null}
+                  {fieldChoices.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field label="Email field">
-                <Input value={form.emailField} onChange={set('emailField')} />
+                <Select value={form.emailField} onChange={set('emailField')} disabled={fieldsLoading || !fieldChoices.length}>
+                  {!fieldChoices.length ? <option value="">No fields yet</option> : null}
+                  {form.emailField && !fieldChoices.includes(form.emailField) ? <option value={form.emailField}>{form.emailField}</option> : null}
+                  {fieldChoices.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
               </Field>
-              <Field label="Username field">
-                <Input value={form.usernameField} onChange={set('usernameField')} />
+              <Field label="Username field" hint="Often the same as email">
+                <Select value={form.usernameField} onChange={set('usernameField')} disabled={fieldsLoading || !fieldChoices.length}>
+                  {!fieldChoices.length ? <option value="">No fields yet</option> : null}
+                  {form.usernameField && !fieldChoices.includes(form.usernameField) ? (
+                    <option value={form.usernameField}>{form.usernameField}</option>
+                  ) : null}
+                  {fieldChoices.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
               </Field>
-              <Field label="Password field">
-                <Input value={form.passwordField} onChange={set('passwordField')} />
+              <Field label="Password field" hint="Where the bcrypt hash is stored">
+                <Select value={form.passwordField} onChange={set('passwordField')} disabled={fieldsLoading || !fieldChoices.length}>
+                  {!fieldChoices.length ? <option value="">No fields yet</option> : null}
+                  {form.passwordField && !fieldChoices.includes(form.passwordField) ? (
+                    <option value={form.passwordField}>{form.passwordField}</option>
+                  ) : null}
+                  {fieldChoices.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </div>
             <Field label="Password mode">

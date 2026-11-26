@@ -42,6 +42,9 @@ export function defaultColumnType(engine, name) {
 export function normalizeColumn(raw, i = 0, engine = 'any') {
   const name = slug(raw?.name, `field_${i + 1}`);
   const nullable = raw?.nullable;
+  const children = Array.isArray(raw?.children)
+    ? raw.children.map((col, j) => normalizeColumn(col, j, engine))
+    : [];
   return {
     name,
     type: String(raw?.type || defaultColumnType(engine, name)).trim() || 'string',
@@ -51,6 +54,7 @@ export function normalizeColumn(raw, i = 0, engine = 'any') {
     required: raw?.required == null ? (nullable == null ? Boolean(raw?.pk) : !nullable) : Boolean(raw.required),
     note: String(raw?.note || '').trim().slice(0, 400),
     presence: Number.isFinite(raw?.presence) ? raw.presence : null,
+    children,
   };
 }
 
@@ -65,6 +69,8 @@ export function normalizeObject(raw, i = 0, engine = 'any') {
     note: String(raw?.note || '').trim().slice(0, 800),
     columns,
     rows: Number.isFinite(raw?.rows) ? raw.rows : Number.isFinite(raw?.estimatedCount) ? raw.estimatedCount : null,
+    strict: raw.strict == null ? true : Boolean(raw.strict),
+    shapeDescription: String(raw.shapeDescription || raw.flexDescription || '').trim().slice(0, 1200),
     x: Number.isFinite(Number(raw?.x)) ? Number(raw.x) : null,
     y: Number.isFinite(Number(raw?.y)) ? Number(raw.y) : null,
   };
