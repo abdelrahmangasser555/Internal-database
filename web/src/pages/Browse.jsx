@@ -24,7 +24,9 @@ import { Badge, Button, Empty, Input, Select, Sheet, Skeleton, StatusDot, Tabs }
 import { EngineLogo } from '../components/EngineLogo.jsx';
 import { DataGrid, JsonView, documentsToGrid } from '../components/DataGrid.jsx';
 import { ErDiagram } from '../components/explore/ErDiagram.jsx';
+import { LinkedRecordSheet } from '../components/explore/LinkedRecordSheet.jsx';
 import { QueryPanel } from '../components/explore/QueryPanel.jsx';
+import { buildColumnLinks } from '../lib/exploreRefs.js';
 import { bytes, compact } from '../lib/format.js';
 import { engineOf, shortName } from '../lib/engines.js';
 import { cn } from '../lib/cn.js';
@@ -450,6 +452,8 @@ function ObjectView({ conn, db, object, engine, onOpen, initialTab }) {
   const [filter, setFilter] = useState(null);
   const [jsonFilter, setJsonFilter] = useState('');
   const [picked, setPicked] = useState(null);
+  const [graph, setGraph] = useState(null);
+  const [linkPick, setLinkPick] = useState(null);
 
   useEffect(() => {
     API.connections
@@ -460,6 +464,15 @@ function ObjectView({ conn, db, object, engine, onOpen, initialTab }) {
       })
       .catch((err) => setMeta({ error: err.message }));
   }, [conn.id, db, object]);
+
+  useEffect(() => {
+    API.connections
+      .graph(conn.id, db)
+      .then(setGraph)
+      .catch(() => setGraph({ relations: [], tables: [] }));
+  }, [conn.id, db]);
+
+  const columnLinks = useMemo(() => buildColumnLinks({ object, meta, graph }), [object, meta, graph]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -598,9 +611,11 @@ function ObjectView({ conn, db, object, engine, onOpen, initialTab }) {
                   className={cn('h-full', loading && 'opacity-60')}
                   columns={grid.columns}
                   rows={grid.rows}
+                  columnLinks={columnLinks}
                   primaryKey={data.primaryKey || (isMongo ? ['_id'] : [])}
                   sort={sort}
                   onSort={(c) => setSort((s) => (s?.column === c ? (s.dir === 'asc' ? { column: c, dir: 'desc' } : null) : { column: c, dir: 'asc' }))}
+                  onLinkClick={(column, value, ref) => setLinkPick({ ...ref, value, sourceColumn: column })}
                   onRowClick={(row, i) => setPicked(data.documents ? data.documents[i] : Object.fromEntries(grid.columns.map((c, ci) => [c.name, row[ci]])))}
                 />
               ) : null}
@@ -639,6 +654,16 @@ function ObjectView({ conn, db, object, engine, onOpen, initialTab }) {
       <Sheet open={Boolean(picked)} title={isMongo ? 'Document' : 'Row'} subtitle={`${shortName(object, engine)} · read-only`} wide onClose={() => setPicked(null)}>
         {picked ? <JsonView value={picked} /> : null}
       </Sheet>
+
+      <LinkedRecordSheet
+        open={Boolean(linkPick)}
+        pick={linkPick}
+        connectionId={conn.id}
+        db={db}
+        engine={engine}
+        onClose={() => setLinkPick(null)}
+        onOpenObject={(name) => onOpen(name)}
+      />
     </>
   );
 }

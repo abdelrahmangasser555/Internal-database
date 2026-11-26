@@ -47,6 +47,10 @@ export function settingsPath() {
   return '/settings';
 }
 
+export function schemasPath(id) {
+  return id ? `/schemas/${encodeURIComponent(id)}` : '/schemas';
+}
+
 export function connectionIdFromPath(pathname) {
   const match = String(pathname || '').match(/^\/c\/([^/]+)/);
   return match ? decodeURIComponent(match[1]) : '';

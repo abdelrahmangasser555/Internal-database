@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in **backup-service** (local backup scheduler, explorer and restore tool for MongoDB, PostgreSQL, MySQL/MariaDB, SQLite and SQL Server; MongoDB password rotation; import seeds; AI exploration dashboards).
+Guidance for AI coding agents working in **backup-service** (local backup scheduler, explorer and restore tool for MongoDB, PostgreSQL, MySQL/MariaDB, SQLite and SQL Server; MongoDB password rotation; import seeds; AI exploration dashboards; independent schema builder).
 
 ## Project summary
 
@@ -39,7 +39,7 @@ src/
   worker.js         # scheduler only; exits if lock held
   server.js         # Express app + /api/* routes; static UI from web/dist only (SPA)
   core/
-    store.js        # JSON persistence (connections, jobs, records, settings, audits, seeds, dashboards)
+    store.js        # JSON persistence (connections, jobs, records, settings, audits, seeds, dashboards, schema drafts)
     engines.js      # engine registry, URI detection, URI masking
     adapters/       # one module per engine behind a shared interface
       index.js      #   adapterFor(), resolveConnection(), health checks
@@ -54,13 +54,15 @@ src/
     seed-skills.js  # copyable export prompts (universal + per engine)
     seeds.js        # simulate + apply seeds onto a connection
     dashboards.js   # persist + run AI exploration dashboards (read-only queries)
-    ai.js           # optional OpenRouter assistant (drafts queries/dashboards; never executes)
+    schema-format.js # backup-service-schema-v1 drafts + rule-based findings (engine-agnostic)
+    schema-studio.js # AI draft/revise/critique + live read-only Analyze
+    ai.js           # optional OpenRouter assistant (drafts queries/dashboards/schemas; never executes)
     mongo.js        # Mongo client cache, browse helpers (used by the Mongo adapter and Rotate)
     schedule.js     # node-cron, next-run computation
     rotate.js       # password rotation (hashes on the database; plaintext stays in the local audit)
     crypto.js       # master key, URI encryption, backup passphrase AES-256-GCM
     email.js        # AWS SES HTML mail
-    paths.js        # ROOT, DATA_DIR, file paths, ensureDataDirs()
+    paths.js        # ROOT, DATA_DIR, file paths (including schemas.json), ensureDataDirs()
     env.js          # dotenv load
     lock.js         # single scheduler via data/scheduler.lock
     autostart.js    # OS login autostart
@@ -83,9 +85,10 @@ scripts/
 4a. **Explorer queries** — Anything user- or AI-typed goes through `assertReadOnlySql()` (SQL) or `parseMongoQuery()` (Mongo) **and** runs inside a read-only transaction/handle. Never weaken either layer.
 4b. **Restore** — Explicit write path. It only writes into empty or new tables/collections, needs the typed target name, and logs to `data/write-audit.json`.
 4c. **Import seeds** — Third explicit write path (`src/core/seeds.js`). Format `backup-service-seed-v1` (`src/core/seed-format.js`). Simulate is read-only (schema, privileges, ref graph, live key lookup). Apply can CREATE missing objects, optionally DELETE rows in listed objects (`wipe`), then INSERT in parent-first order. Confirm by typing the target database name. Audits as `kind: 'seed'`. Copyable export skills live in `src/core/seed-skills.js` (`GET /api/seeds/skills`).
-4d. **Analytics dashboards** — Read-only. User describes a view; `draftDashboard()` in `ai.js` returns widgets (kpi / bar / line / pie / table / pipeline). `dashboards.js` stores them in `data/dashboards.json` and re-runs queries through the same read-only adapters. Never execute writes from a dashboard.
+4d. **Analytics dashboards** — Read-only. User describes a view or pastes a query; `draftDashboard()` / `reviseDashboardDraft()` / `draftWidget()` in `ai.js` return widgets (`kpi`, `bar`, `line`, `area`, `pie`, `scatter`, `stacked`, `funnel`, `table`, `pipeline`, `note`). Invalid queries get one repair pass with the engine error, then `dashboards.js` runs them in parallel through the same read-only adapters. Follow-ups (`POST /api/dashboards/:id/revise`) edit the layout instead of starting over. Never execute writes from a dashboard.
+4e. **Schema builder** — Global `/schemas`, stored in `data/schemas.json`, **not** tied to a connection. Users (or the assistant) add collections/tables, relations, sticky notes. Analyze paints findings on the React Flow canvas (node rings, field marks, edge labels), not as a text dump. Live **Analyze** on Explore → Diagram (`POST /api/connections/:id/databases/:db/analyze`) is read-only: `graph` + `describe` (indexes, row counts, sampled fields) for every engine, then the same finding overlay. Heuristics run without an AI key; OpenRouter adds a second pass. Never write to the source database.
 5. **Rotation** — `rotate.js` writes password **hashes** to MongoDB. The generated password and the previous generated password are stored in `data/rotation-audit.json` on this device (gitignored) so the audit page can search, filter by date, copy the latest password, and download a `.txt`. Default notify email is off unless settings enable it.
-6. **UI** — React dashboard in `web/src/` (Vite, Tailwind, Lucide, Framer Motion, `@xyflow/react`, Recharts). Information architecture is **connection-first**: `/` lists connections; `/c/:connectionId/*` is the workspace (overview, explore, backups, analytics, seeds, flow, rotate). Old `/browse`, `/backups`, `/rotate`, `/analytics`, `/seeds`, `/flow` URLs redirect. Theme tokens (`web/src/index.css`) drive type, radius, stroke, shadow and buttons per brand — use `border-theme`, `shadow-card`, `rounded-md`, `btn`. After API changes, update `web/src/api.js` and the relevant page/sheet. `npm run build:ui` writes `web/dist`; Express serves that as an SPA. `npm run dev` proxies `/api` from Vite `:5173` to Express `:4780`. Info (`i`) tips are `InfoTip` / `Field info=` in `web/src/components/ui.jsx`. The flow map (`web/src/pages/FlowMap.jsx`) draws backup jobs plus pinned analytics dashboards and seeds. A seed `bindings[]` entry is `{ connectionId, database }`; clicking that node opens the seed on that target. Folder and file pickers live in `src/core/dialogs.js` (`POST /api/dialogs/folder`, `POST /api/dialogs/file`).
+6. **UI** — React dashboard in `web/src/` (Vite, Tailwind, Lucide, Framer Motion, `@xyflow/react`, Recharts). Information architecture is **connection-first**: `/` lists connections; `/c/:connectionId/*` is the workspace (overview, explore, backups, analytics, seeds, flow, rotate). Schema builder lives at `/schemas` (global, like Settings). Old `/browse`, `/backups`, `/rotate`, `/analytics`, `/seeds`, `/flow` URLs redirect. Theme tokens (`web/src/index.css`) drive type, radius, stroke, shadow and buttons per brand — use `border-theme`, `shadow-card`, `rounded-md`, `btn`. After API changes, update `web/src/api.js` and the relevant page/sheet. `npm run build:ui` writes `web/dist`; Express serves that as an SPA. `npm run dev` proxies `/api` from Vite `:5173` to Express `:4780`. Info (`i`) tips are `InfoTip` / `Field info=` in `web/src/components/ui.jsx`. The flow map (`web/src/pages/FlowMap.jsx`) draws backup jobs plus pinned analytics dashboards and seeds. A seed `bindings[]` entry is `{ connectionId, database }`; clicking that node opens the seed on that target. Folder and file pickers live in `src/core/dialogs.js` (`POST /api/dialogs/folder`, `POST /api/dialogs/file`).
 7. **Connection privileges** — `adapter.permissions(conn, db)` on every engine. `GET /api/connections/:id/permissions`. Shown on the connection sheet (and simulation reports). Best-effort: missing GRANT visibility is a note, not a hard failure.
 8. **Connection insight** — `adapter.insight(conn, db)` plus `GET /api/connections/:id/insight`. Read-only cluster/database metadata for the connection home (version, topology, connections, collections). Samples of connection counts are stored in `data/insight-samples.json` (gitignored) so “opened in the last period” can be estimated.
 
@@ -126,7 +129,7 @@ SES sandbox only sends to verified recipients. Analytics dashboards need the ass
 ## Safety rules for agents
 
 1. **Do not** commit `.env`, `data/`, backups, or `data/master.key`.
-2. **Do not** add write operations to target databases during backup/browse/query/assistant/analytics flows unless the user explicitly requests a new feature and it is clearly scoped. **Rotate, Restore and Seeds** are the intentional write paths. The assistant must never execute anything itself.
+2. **Do not** add write operations to target databases during backup/browse/query/assistant/analytics/schema-builder flows unless the user explicitly requests a new feature and it is clearly scoped. **Rotate, Restore and Seeds** are the intentional write paths. Schema drafts live only in `data/schemas.json`. Live Analyze is read-only. The assistant must never execute anything itself.
 3. **Do not** expose connection URIs in logs or API responses without masking.
 4. **Do not** bind the dashboard to `0.0.0.0` unless the user asks; product intent is local-only.
 5. When changing encryption or file formats, consider backward compatibility for existing `.zip.enc` and `data/*.json`. Seed format changes must keep opening `backup-service-seed-v1`.
@@ -142,7 +145,8 @@ SES sandbox only sends to verified recipients. Analytics dashboards need the ass
 | Explorer | `core/adapters/*`, `web/src/pages/Browse.jsx`, `web/src/components/explore/` |
 | Verify / restore | `core/verify.js`, `core/restore.js`, `web/src/components/RecordSheet.jsx`, `RestoreSheet.jsx` |
 | Import seeds | `core/seed-format.js`, `core/seeds.js`, `core/seed-skills.js`, adapter `seed*` / `permissions`, `web/src/pages/Seeds.jsx` |
-| Analytics dashboards | `core/ai.js` (`draftDashboard`), `core/dashboards.js`, `web/src/pages/Analytics.jsx` |
+| Analytics dashboards | `core/ai.js` (`draftDashboard`, `reviseDashboardDraft`, `draftWidget`, `repairWidgets`), `core/dashboards.js`, `web/src/pages/Analytics.jsx`, `web/src/components/charts/WidgetChart.jsx` |
+| Schema builder / Analyze | `core/schema-format.js`, `core/schema-studio.js`, `web/src/pages/Schemas.jsx`, `web/src/components/schema/SchemaCanvas.jsx`, Explore diagram Analyze in `ErDiagram.jsx` |
 | Assistant | `core/ai.js`, `web/src/components/AssistantSheet.jsx` |
 | Connection privileges | `adapter.permissions()`, `GET /api/connections/:id/permissions`, `ConnectionSheet.jsx` |
 | Connection home analytics | `adapter.insight()`, `core/insight.js`, `GET /api/connections/:id/insight`, `ConnectionHome.jsx` |

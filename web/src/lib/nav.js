@@ -1,9 +1,10 @@
-import { Database, Settings } from 'lucide-react';
+import { Boxes, Database, Settings } from 'lucide-react';
 import { BarChart3, FolderArchive, KeyRound, LayoutDashboard, Sprout, Workflow } from 'lucide-react';
 import { connectionTools } from './paths.js';
 
 export const GLOBAL_NAV = [
   { to: '/', label: 'Connections', icon: Database, end: true },
+  { to: '/schemas', label: 'Schemas', icon: Boxes },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 

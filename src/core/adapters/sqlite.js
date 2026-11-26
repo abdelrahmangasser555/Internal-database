@@ -187,6 +187,25 @@ export async function rows(conn, _db, name, { skip = 0, limit = 50, sort, filter
   };
 }
 
+export async function fetchOne(conn, _db, name, { field, value }) {
+  if (!field) throw new Error('field is required');
+  const db = await open(conn);
+  const meta = describeWith(db, name);
+  if (!meta.columns.some((c) => c.name === field)) throw new Error(`Unknown column ${field}`);
+  const row = db.prepare(`SELECT * FROM ${q(name)} WHERE ${q(field)} = ? LIMIT 1`).get(value);
+  if (!row) return { found: false, object: name, field };
+  const next = {};
+  for (const [k, v] of Object.entries(row)) next[k] = displayValue(v);
+  return {
+    found: true,
+    object: name,
+    field,
+    columns: meta.columns.map((c) => ({ name: c.name, type: c.type })),
+    row: next,
+    primaryKey: meta.primaryKey,
+  };
+}
+
 export async function query(conn, _db, text, { limit = 500 } = {}) {
   const sql = assertReadOnlySql(text);
   const cap = clampLimit(limit, 500, 5000);

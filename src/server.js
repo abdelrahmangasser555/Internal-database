@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, publicSettings, listRotationAudit, listWriteAudit, listSeeds, getSeed, saveSeed, deleteSeed, patchSeed, listDashboards, getDashboard, saveDashboard, deleteDashboard } from './core/store.js';
+import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, publicSettings, listRotationAudit, listWriteAudit, listSeeds, getSeed, saveSeed, deleteSeed, patchSeed, listDashboards, getDashboard, saveDashboard, deleteDashboard, listSchemaDrafts, getSchemaDraft, saveSchemaDraft, deleteSchemaDraft } from './core/store.js';
 import { connectionInsight } from './core/insight.js';
 import { listCollections, findDocuments, collectionStats, listIndexes, sampleUsers, closeClient } from './core/mongo.js';
 import { runBackup, getRunning, listRunning, recordExists, decryptRecord, importBackupFile, tempDecryptDir } from './core/backup.js';
@@ -13,7 +13,9 @@ import { aiStatus, draftQuery, explainSchema, clearSchemaCache, testAi } from '.
 import { applySeed, fullSeed, publicSeed, simulateSeed } from './core/seeds.js';
 import { listSkills } from './core/seed-skills.js';
 import { exampleSeed, validateSeed } from './core/seed-format.js';
-import { createDashboard, runDashboard } from './core/dashboards.js';
+import { addDashboardWidget, createDashboard, previewQuery, repairDashboard, reviseDashboard, runDashboard } from './core/dashboards.js';
+import { analyzeDraft, analyzeLive, draftSchema, publicDraft } from './core/schema-studio.js';
+import { emptySchema } from './core/schema-format.js';
 import { computeNextRun, describeInterval, formatNext } from './core/schedule.js';
 import { pickFile, pickFolder } from './core/dialogs.js';
 import { revealPath, revealRecord } from './core/explorer.js';
@@ -197,6 +199,28 @@ export function createApp() {
   );
 
   app.get(
+    `${dbBase}/objects/:name/fetch`,
+    wrap(async (req, res) => {
+      const { conn, adapter } = resolveConnection(req.params.id);
+      if (typeof adapter.fetchOne !== 'function') throw new Error('This engine does not support linked lookups');
+      const field = String(req.query.field || '').trim();
+      const value = req.query.value;
+      if (!field) throw new Error('field is required');
+      if (value == null || value === '') throw new Error('value is required');
+      const targetObject = req.params.name;
+      let parsed = value;
+      if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+        try {
+          parsed = JSON.parse(value);
+        } catch {
+          parsed = value;
+        }
+      }
+      res.json(await adapter.fetchOne(conn, req.params.db, targetObject, { field, value: parsed }));
+    }),
+  );
+
+  app.get(
     `${dbBase}/objects/:name/rows`,
     wrap(async (req, res) => {
       const { conn, adapter } = resolveConnection(req.params.id);
@@ -233,6 +257,13 @@ export function createApp() {
     wrap(async (req, res) => {
       const { conn, adapter } = resolveConnection(req.params.id);
       res.json(await adapter.graph(conn, req.params.db));
+    }),
+  );
+
+  app.post(
+    `${dbBase}/analyze`,
+    wrap(async (req, res) => {
+      res.json(await analyzeLive({ connectionId: req.params.id, database: req.params.db }));
     }),
   );
 
@@ -571,17 +602,52 @@ export function createApp() {
     }),
   );
   app.post(
+    '/api/dashboards/preview',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      res.json(await previewQuery(body));
+    }),
+  );
+  app.post(
     '/api/dashboards',
     wrap(async (req, res) => {
       const body = req.body || {};
       if (!body.connectionId || !body.database) throw new Error('Pick a connection and database');
-      res.json(await createDashboard({ connectionId: body.connectionId, database: body.database, prompt: body.prompt }));
+      res.json(
+        await createDashboard({
+          connectionId: body.connectionId,
+          database: body.database,
+          prompt: body.prompt,
+          query: body.query,
+          type: body.type,
+          title: body.title,
+        }),
+      );
     }),
   );
   app.post(
     '/api/dashboards/:id/run',
     wrap(async (req, res) => {
       res.json(await runDashboard(req.params.id));
+    }),
+  );
+  app.post(
+    '/api/dashboards/:id/revise',
+    wrap(async (req, res) => {
+      res.json(await reviseDashboard({ id: req.params.id, instruction: req.body?.instruction }));
+    }),
+  );
+  app.post(
+    '/api/dashboards/:id/widgets',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      res.json(await addDashboardWidget({ id: req.params.id, prompt: body.prompt, query: body.query, type: body.type, title: body.title }));
+    }),
+  );
+  app.post(
+    '/api/dashboards/:id/repair',
+    wrap(async (req, res) => {
+      res.json(await repairDashboard(req.params.id));
     }),
   );
   app.put(
@@ -594,6 +660,63 @@ export function createApp() {
   );
   app.delete('/api/dashboards/:id', (req, res) => {
     deleteDashboard(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.get('/api/schemas', (_req, res) => res.json(listSchemaDrafts().map(publicDraft)));
+
+  app.post(
+    '/api/schemas',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      const schema = body.schema || emptySchema({ name: body.name, engine: body.engine, description: body.description });
+      res.json(saveSchemaDraft({ ...body, schema }));
+    }),
+  );
+
+  app.get('/api/schemas/:id', (req, res) => {
+    const row = getSchemaDraft(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Schema draft not found' });
+    res.json(row);
+  });
+
+  app.put(
+    '/api/schemas/:id',
+    wrap(async (req, res) => {
+      const existing = getSchemaDraft(req.params.id);
+      if (!existing) throw new Error('Schema draft not found');
+      res.json(saveSchemaDraft({ ...existing, ...req.body, id: req.params.id, schema: req.body?.schema || existing.schema }));
+    }),
+  );
+
+  app.post(
+    '/api/schemas/:id/talk',
+    wrap(async (req, res) => {
+      const existing = getSchemaDraft(req.params.id);
+      if (!existing) throw new Error('Schema draft not found');
+      const { schema, model } = await draftSchema({
+        prompt: req.body?.prompt,
+        engine: req.body?.engine || existing.engine,
+        current: existing.schema,
+      });
+      const saved = saveSchemaDraft({ id: req.params.id, schema, name: schema.name, engine: schema.engine, description: schema.description });
+      res.json({ ...saved, model });
+    }),
+  );
+
+  app.post(
+    '/api/schemas/:id/analyze',
+    wrap(async (req, res) => {
+      const existing = getSchemaDraft(req.params.id);
+      if (!existing) throw new Error('Schema draft not found');
+      const result = await analyzeDraft(existing.schema);
+      const saved = saveSchemaDraft({ id: req.params.id, schema: result.schema, name: result.schema.name, engine: result.schema.engine });
+      res.json({ ...saved, findings: result.findings, summary: result.summary, model: result.model, ai: result.ai, error: result.error });
+    }),
+  );
+
+  app.delete('/api/schemas/:id', (req, res) => {
+    deleteSchemaDraft(req.params.id);
     res.json({ ok: true });
   });
 

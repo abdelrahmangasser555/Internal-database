@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Plus, Search, Settings, Sparkles } from 'lucide-react';
+import { Boxes, Plus, Search, Settings, Sparkles } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { useApp } from '../state/AppState.jsx';
 import { useTheme } from '../state/Theme.jsx';
@@ -28,9 +28,10 @@ export function AppShell() {
   const conn = connections.find((c) => c.id === connectionId);
   const section = location.pathname.split('/')[1] || '';
   const tool = location.pathname.split('/')[3] || (connectionId ? 'overview' : '');
-  const fullBleed = Boolean(connectionId);
+  const schemaStudio = location.pathname.startsWith('/schemas');
+  const fullBleed = Boolean(connectionId) || schemaStudio;
 
-  const title = conn ? conn.name : section === 'settings' ? 'Settings' : 'Connections';
+  const title = conn ? conn.name : section === 'settings' ? 'Settings' : schemaStudio ? 'Schema builder' : 'Connections';
 
   const mobileTools = conn ? toolsFor(conn).filter((item) => MOBILE_TOOLS.includes(item.id)) : [];
 
@@ -82,6 +83,17 @@ export function AppShell() {
           <Button variant="primary" className="w-full" onClick={() => openSheet({ type: 'connection' })}>
             <Plus size={15} /> New connection
           </Button>
+          <NavLink
+            to="/schemas"
+            className={({ isActive }) =>
+              cn(
+                'focus-ring flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium',
+                isActive ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface-2/60 hover:text-fg',
+              )
+            }
+          >
+            <Boxes size={15} /> Schemas
+          </NavLink>
           <NavLink
             to="/settings"
             className={({ isActive }) =>
@@ -153,6 +165,7 @@ export function AppShell() {
             })
           : [
               { to: '/', label: 'Connections', end: true },
+              { to: '/schemas', label: 'Schemas' },
               { to: '/settings', label: 'Settings' },
             ].map((item) => (
               <NavLink

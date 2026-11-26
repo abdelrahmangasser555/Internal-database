@@ -245,6 +245,29 @@ export async function rows(conn, db, name, { skip = 0, limit = 50, sort, filter 
   });
 }
 
+export async function fetchOne(conn, db, name, { field, value }) {
+  if (!field) throw new Error('field is required');
+  const meta = await describe(conn, db, name);
+  if (!meta.columns.some((c) => c.name === field)) throw new Error(`Unknown column ${field}`);
+  return readOnly(conn, db, async (c) => {
+    const [rows, fields] = await c.query({
+      sql: `SELECT * FROM ${q(name)} WHERE ${q(field)} = ? LIMIT 1`,
+      values: [value],
+    });
+    if (!rows[0]) return { found: false, object: name, field };
+    const row = {};
+    for (let i = 0; i < fields.length; i += 1) row[fields[i].name] = displayValue(rows[0][i]);
+    return {
+      found: true,
+      object: name,
+      field,
+      columns: meta.columns.map((col) => ({ name: col.name, type: col.type })),
+      row,
+      primaryKey: meta.primaryKey,
+    };
+  });
+}
+
 export async function query(conn, db, text, { limit = 500 } = {}) {
   const sql = assertReadOnlySql(text);
   const cap = clampLimit(limit, 500, 5000);

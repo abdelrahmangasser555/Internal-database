@@ -518,6 +518,26 @@ export async function insight(conn, db) {
   };
 }
 
+export async function fetchOne(conn, db, name, { field, value }) {
+  if (!field) throw new Error('field is required');
+  const client = await getClient(conn.id);
+  const col = client.db(db).collection(name);
+  let queryValue = toMongoValue(value);
+  if (field === '_id') {
+    const raw = value && typeof value === 'object' && value.$oid ? value.$oid : typeof value === 'string' ? value : null;
+    if (raw && /^[a-f0-9]{24}$/i.test(raw)) {
+      try {
+        queryValue = new ObjectId(raw);
+      } catch {
+        queryValue = raw;
+      }
+    }
+  }
+  const doc = await col.findOne({ [field]: queryValue }, { maxTimeMS: 10_000 });
+  if (!doc) return { found: false, object: name, field };
+  return { found: true, object: name, field, document: EJSON.serialize(doc) };
+}
+
 export async function lookupKeys(conn, db, name, field, values) {
   const list = [...new Set((values || []).map(mongoKey).filter((v) => v != null))].slice(0, 200);
   if (!list.length) return [];

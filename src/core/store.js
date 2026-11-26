@@ -9,11 +9,13 @@ import {
   JOBS_FILE,
   RECORDS_FILE,
   ROTATION_AUDIT_FILE,
+  SCHEMAS_FILE,
   SEEDS_FILE,
   SETTINGS_FILE,
   WRITE_AUDIT_FILE,
 } from './paths.js';
 import { parseSeed, summarizeSeed } from './seed-format.js';
+import { normalizeSchema } from './schema-format.js';
 
 function readJson(file, fallback) {
   try {
@@ -357,6 +359,44 @@ export function deleteDashboard(id) {
   writeJson(
     DASHBOARDS_FILE,
     listDashboards().filter((item) => item.id !== id),
+  );
+}
+
+export function listSchemaDrafts() {
+  return readJson(SCHEMAS_FILE, []);
+}
+
+export function getSchemaDraft(id) {
+  return listSchemaDrafts().find((row) => row.id === id) || null;
+}
+
+export function saveSchemaDraft(input) {
+  const rows = listSchemaDrafts();
+  const now = new Date().toISOString();
+  let row = input.id ? rows.find((item) => item.id === input.id) : null;
+  if (!row) {
+    row = { id: input.id || newId(), createdAt: now };
+    rows.unshift(row);
+  }
+  const schema = normalizeSchema({
+    ...(input.schema && typeof input.schema === 'object' ? input.schema : input),
+    name: input.name || input.schema?.name,
+    engine: input.engine || input.schema?.engine,
+    description: input.description ?? input.schema?.description,
+  });
+  row.name = schema.name;
+  row.engine = schema.engine;
+  row.description = schema.description;
+  row.schema = schema;
+  row.updatedAt = now;
+  writeJson(SCHEMAS_FILE, rows);
+  return row;
+}
+
+export function deleteSchemaDraft(id) {
+  writeJson(
+    SCHEMAS_FILE,
+    listSchemaDrafts().filter((item) => item.id !== id),
   );
 }
 

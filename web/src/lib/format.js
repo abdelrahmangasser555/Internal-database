@@ -59,6 +59,15 @@ export function compact(n) {
   return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(n));
 }
 
+export function metric(n, format = 'compact') {
+  if (n == null || Number.isNaN(Number(n))) return '—';
+  const v = Number(n);
+  if (format === 'percent') return `${v.toFixed(v >= 10 ? 0 : 1)}%`;
+  if (format === 'bytes') return bytes(v);
+  if (format === 'number') return new Intl.NumberFormat('en', { maximumFractionDigits: 2 }).format(v);
+  return compact(v);
+}
+
 export function duration(ms) {
   if (!ms && ms !== 0) return '—';
   if (ms < 1000) return `${ms} ms`;

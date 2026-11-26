@@ -10,6 +10,7 @@ import { RotatePage } from './pages/Rotate.jsx';
 import { SettingsPage } from './pages/Settings.jsx';
 import { SeedsPage } from './pages/Seeds.jsx';
 import { AnalyticsPage } from './pages/Analytics.jsx';
+import { SchemasPage } from './pages/Schemas.jsx';
 import { analyticsPath, backupsPath, connectionPath, explorePath, lastConnectionId, rotatePath, seedsPath } from './lib/paths.js';
 import { useApp } from './state/AppState.jsx';
 
@@ -78,6 +79,8 @@ export default function App() {
           <Route path="rotate" element={<RotatePage />} />
         </Route>
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="schemas" element={<SchemasPage />} />
+        <Route path="schemas/:schemaId" element={<SchemasPage />} />
         <Route path="browse" element={<RedirectBrowse />} />
         <Route path="browse/:connectionId" element={<RedirectBrowse />} />
         <Route path="browse/:connectionId/:db" element={<RedirectBrowse />} />

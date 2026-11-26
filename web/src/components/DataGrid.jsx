@@ -1,7 +1,8 @@
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, Link2 } from 'lucide-react';
 import { cn } from '../lib/cn.js';
+import { isLinkableValue } from '../lib/exploreRefs.js';
 
-function renderCell(value) {
+function renderCellContent(value) {
   if (value === null || value === undefined) return <span className="italic text-subtle">null</span>;
   if (typeof value === 'boolean') return <span className="text-info">{String(value)}</span>;
   if (typeof value === 'number') return <span className="num">{value}</span>;
@@ -13,12 +14,31 @@ function renderCell(value) {
   return String(value);
 }
 
+function renderCell(value, link, onLinkClick, columnName) {
+  const content = renderCellContent(value);
+  if (!link || !isLinkableValue(value) || !onLinkClick) return content;
+  return (
+    <button
+      type="button"
+      title={`Open ${link.targetObject}`}
+      className="inline-flex max-w-full items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-info underline decoration-info/40 underline-offset-2 hover:bg-info/10 hover:decoration-info"
+      onClick={(e) => {
+        e.stopPropagation();
+        onLinkClick(columnName, value, link);
+      }}
+    >
+      <Link2 size={11} className="shrink-0 opacity-80" />
+      <span className="truncate">{content}</span>
+    </button>
+  );
+}
+
 const NUMERIC = /int|numeric|decimal|double|float|real|money|serial|number/i;
 
 /**
  * Generic read-only grid. `rows` are arrays aligned with `columns` ({ name, type }).
  */
-export function DataGrid({ columns, rows, sort, onSort, onRowClick, primaryKey = [], className, emptyText = 'No rows' }) {
+export function DataGrid({ columns, rows, sort, onSort, onRowClick, onLinkClick, columnLinks = {}, primaryKey = [], className, emptyText = 'No rows' }) {
   return (
     <div className={cn('overflow-auto', className)}>
       <table className="min-w-full border-separate border-spacing-0 text-left text-[12.5px]">
@@ -36,6 +56,7 @@ export function DataGrid({ columns, rows, sort, onSort, onRowClick, primaryKey =
                     className={cn('inline-flex items-center gap-1.5 text-[12px] text-fg', onSort && 'hover:text-primary')}
                   >
                     {primaryKey.includes(c.name) ? <span className="text-[10px] font-semibold text-warn">PK</span> : null}
+                    {columnLinks[c.name] ? <Link2 size={10} className="text-info opacity-80" title="Foreign key / reference" /> : null}
                     {c.name}
                     {c.type ? <span className="font-mono text-[10.5px] font-normal text-subtle">{c.type}</span> : null}
                     {active ? sort.dir === 'desc' ? <ArrowDown size={12} /> : <ArrowUp size={12} /> : null}
@@ -58,7 +79,7 @@ export function DataGrid({ columns, rows, sort, onSort, onRowClick, primaryKey =
                   )}
                   title={typeof row[ci] === 'object' && row[ci] ? JSON.stringify(row[ci]) : String(row[ci] ?? '')}
                 >
-                  {renderCell(row[ci])}
+                  {renderCell(row[ci], columnLinks[c.name], onLinkClick, c.name)}
                 </td>
               ))}
             </tr>

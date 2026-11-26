@@ -11,7 +11,7 @@
     "build:ui": "node scripts/build-ui.js",
     "install:service": "node scripts/install-service.js",
     "uninstall:service": "node scripts/uninstall-service.js",
-    "test": "node --test ./test/seed-format.test.js ./test/seeds-sqlite.test.js ./test/rotation-audit.test.js"
+    "test": "node --test ./test/seed-format.test.js ./test/seeds-sqlite.test.js ./test/rotation-audit.test.js ./test/dashboards.test.js ./test/schema-format.test.js"
   },
   "engines": {
     "node": ">=20"
@@ -32,10 +32,12 @@
     "bson": "^6.10.4",
     "clsx": "^2.1.1",
     "dotenv": "^16.6.1",
+    "echarts": "^6.1.0",
     "express": "^5.1.0",
     "framer-motion": "^14.14.0",
     "lucide-react": "^1.80.0",
     "mongodb": "^6.21.0",
+    "motion": "^14.14.0",
     "mssql": "^12.8.1",
     "mysql2": "^3.24.6",
     "node-cron": "^4.2.1",

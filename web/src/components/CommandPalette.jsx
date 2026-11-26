@@ -71,6 +71,7 @@ export function CommandPalette() {
     const all = [
       ...GLOBAL_NAV.map((n) => ({ id: `nav-${n.to}`, group: 'Go to', label: n.label, icon: n.icon, run: () => navigate(n.to) })),
       { id: 'new-conn', group: 'Actions', label: 'New connection', icon: Plus, run: () => openSheet({ type: 'connection' }) },
+      { id: 'new-schema', group: 'Actions', label: 'New schema draft', icon: Plus, run: () => navigate('/schemas') },
       { id: 'new-job', group: 'Actions', label: 'New backup job', icon: FolderArchive, run: () => openSheet({ type: 'job', job: {} }) },
       { id: 'ask', group: 'Actions', label: 'Ask the assistant', hint: 'Ctrl J', icon: Sparkles, run: () => openAssistant({}) },
       {
