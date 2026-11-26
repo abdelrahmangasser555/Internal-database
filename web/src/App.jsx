@@ -6,6 +6,8 @@ import { BrowsePage } from './pages/Browse.jsx';
 import { BackupsPage } from './pages/Backups.jsx';
 import { RotatePage } from './pages/Rotate.jsx';
 import { SettingsPage } from './pages/Settings.jsx';
+import { SeedsPage } from './pages/Seeds.jsx';
+import { AnalyticsPage } from './pages/Analytics.jsx';
 
 export default function App() {
   return (
@@ -17,6 +19,10 @@ export default function App() {
         <Route path="browse/:connectionId" element={<BrowsePage />} />
         <Route path="browse/:connectionId/:db" element={<BrowsePage />} />
         <Route path="browse/:connectionId/:db/:col" element={<BrowsePage />} />
+        <Route path="seeds" element={<SeedsPage />} />
+        <Route path="seeds/:seedId" element={<SeedsPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="analytics/:dashboardId" element={<AnalyticsPage />} />
         <Route path="backups" element={<BackupsPage />} />
         <Route path="rotate" element={<RotatePage />} />
         <Route path="settings" element={<SettingsPage />} />

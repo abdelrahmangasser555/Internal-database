@@ -10,6 +10,7 @@ import {
   restoreValue,
   topoSortTables,
 } from './sqlsafe.js';
+import { coerceSqlValue, createTableSql, emptyPermission, recordColumns } from './seedwrite.js';
 
 const pools = new Map();
 const SYSTEM_DBS = new Set(['information_schema', 'mysql', 'performance_schema', 'sys']);
@@ -424,4 +425,85 @@ export async function close(connectionId) {
       await p.end().catch(() => {});
     }
   }
+}
+
+export async function permissions(conn, db) {
+  try {
+    return await readOnly(conn, db, async (c) => {
+      const [[who]] = await c.query('SELECT CURRENT_USER() AS user_name, CURRENT_ROLE() AS role_name, DATABASE() AS db_name');
+      let grants = [];
+      try {
+        const [rows] = await c.query('SHOW GRANTS');
+        grants = rows.map((r) => Object.values(r)[0]).filter(Boolean);
+      } catch {
+        grants = [];
+      }
+      const blob = grants.join('\n').toUpperCase();
+      const can = (word) => blob.includes(` ${word} `) || blob.includes('ALL PRIVILEGES') || blob.includes('ALL,');
+      return {
+        user: who?.user_name || 'unknown',
+        roles: who?.role_name && who.role_name !== 'NONE' ? [who.role_name] : [],
+        canRead: can('SELECT') || blob.includes('ALL PRIVILEGES') || !grants.length,
+        canWrite: can('INSERT') || can('UPDATE') || can('DELETE') || blob.includes('ALL PRIVILEGES'),
+        canCreate: can('CREATE') || blob.includes('ALL PRIVILEGES'),
+        canDrop: can('DROP') || blob.includes('ALL PRIVILEGES'),
+        canAdmin: blob.includes('GRANT OPTION') || blob.includes('SUPER'),
+        privileges: grants.slice(0, 24),
+        details: [{ resource: who?.db_name || db, actions: grants.slice(0, 8) }],
+        notes: grants.length ? [] : ['SHOW GRANTS was empty; privileges may still exist.'],
+      };
+    });
+  } catch (err) {
+    return emptyPermission({ notes: [err.message] });
+  }
+}
+
+export async function seedEnsure(conn, db, object) {
+  const c = await writeConnection(conn, db);
+  try {
+    await c.query(createTableSql(object, 'mysql', q, q(object.name)));
+    return { name: object.name, created: true };
+  } finally {
+    await c.end().catch(() => {});
+  }
+}
+
+export async function seedWipe(conn, db, names) {
+  const c = await writeConnection(conn, db);
+  const out = [];
+  try {
+    await c.query('SET FOREIGN_KEY_CHECKS = 0');
+    for (const name of names) {
+      const [r] = await c.query(`DELETE FROM ${q(name)}`);
+      out.push({ name, deleted: r.affectedRows || 0 });
+    }
+    return out;
+  } finally {
+    await c.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {});
+    await c.end().catch(() => {});
+  }
+}
+
+export async function seedInsert(conn, db, name, records) {
+  if (!records?.length) return { name, inserted: 0 };
+  const cols = recordColumns(records);
+  const c = await writeConnection(conn, db);
+  try {
+    await c.query('SET FOREIGN_KEY_CHECKS = 0');
+    const values = records.map((rec) => cols.map((col) => coerceSqlValue(rec[col], { json: true, engine: 'mysql' })));
+    const [r] = await c.query(`INSERT INTO ${q(name)} (${cols.map(q).join(', ')}) VALUES ?`, [values]);
+    return { name, inserted: r.affectedRows || records.length };
+  } finally {
+    await c.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {});
+    await c.end().catch(() => {});
+  }
+}
+
+export async function lookupKeys(conn, db, name, field, values) {
+  const list = [...new Set((values || []).filter((v) => v != null && v !== ''))].slice(0, 200);
+  if (!list.length) return [];
+  return readOnly(conn, db, async (c) => {
+    const [rows] = await c.query(`SELECT ${q(field)} AS k FROM ${q(name)} WHERE ${q(field)} IN (?) LIMIT 200`, [list.map(String)]);
+    return rows.map((r) => String(r.k));
+  });
 }

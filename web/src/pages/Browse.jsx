@@ -277,7 +277,7 @@ function DatabaseList({ conn, list, onOpen, onRefresh }) {
               <RefreshCw size={13} /> Refresh
             </Button>
             <Button size="sm" onClick={() => openSheet({ type: 'connection', connection: conn })}>
-              Edit connection
+              Privileges
             </Button>
           </>
         }

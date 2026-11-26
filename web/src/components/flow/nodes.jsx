@@ -1,5 +1,5 @@
 import { Handle, Position } from '@xyflow/react';
-import { Archive, CalendarClock, HardDrive, Lock, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Archive, BarChart3, CalendarClock, HardDrive, Lock, ShieldCheck, Sprout, Trash2 } from 'lucide-react';
 import { EngineLogo } from '../EngineLogo.jsx';
 import { Badge, StatusDot } from '../ui.jsx';
 import { engineOf } from '../../lib/engines.js';
@@ -9,7 +9,7 @@ import { cn } from '../../lib/cn.js';
 function Frame({ children, selected, accent, className, step }) {
   return (
     <div
-      className={cn('w-[250px] rounded-[14px] border bg-surface p-3.5 shadow-[var(--shadow)] transition', className)}
+      className={cn('w-[250px] rounded-sm border border-dashed bg-surface p-3.5 transition', className)}
       style={{ borderColor: selected ? accent || 'var(--primary)' : 'var(--line)', boxShadow: selected ? `0 0 0 3px color-mix(in oklab, ${accent || 'var(--primary)'} 22%, transparent)` : undefined }}
     >
       {step ? <div className="mb-2 text-[10.5px] font-medium uppercase tracking-[0.08em] text-subtle">{step}</div> : null}
@@ -43,10 +43,15 @@ export function SourceNode({ data, selected }) {
       </div>
       <div className="mt-2.5 truncate font-mono text-[10.5px] text-subtle">{conn.uriMasked}</div>
       <div className="mt-2 flex items-center gap-1.5">
-        <span className="h-1.5 w-6 rounded-full" style={{ background: conn.color }} />
+        <span className="h-1.5 w-6" style={{ background: conn.color }} />
         <span className="text-[11px] text-muted">
           {jobs} job{jobs === 1 ? '' : 's'}
         </span>
+      </div>
+      <div className="mt-2.5 grid grid-cols-3 gap-1 border-t border-dashed border-line pt-2">
+        <Action icon={Archive} label="Backup" onClick={() => data.onAddJob?.(conn)} />
+        <Action icon={BarChart3} label="Chart" onClick={() => data.onAddDashboard?.(conn)} />
+        <Action icon={Sprout} label="Seed" onClick={() => data.onPinSeed?.(conn)} />
       </div>
       <Handle type="source" position={Position.Right} />
     </Frame>
@@ -141,11 +146,58 @@ export function RetentionNode({ data, selected }) {
 
 export function GhostNode({ data }) {
   return (
-    <div className="w-[220px] cursor-pointer rounded-[14px] border border-dashed border-line-strong bg-transparent p-3.5 text-center text-[12.5px] text-muted hover:border-primary hover:text-primary">
+    <div className="w-[220px] cursor-pointer rounded-sm border border-dashed border-line-strong bg-transparent p-3.5 text-center text-[12.5px] text-muted hover:border-primary hover:text-primary">
       <Handle type="target" position={Position.Left} />
-      <Plus size={16} className="mx-auto mb-1" />
+      <Archive size={16} className="mx-auto mb-1" />
       Add a backup job for {data.conn.name}
     </div>
+  );
+}
+
+export function DashboardNode({ data, selected }) {
+  const { dashboard } = data;
+  return (
+    <Frame selected={selected} step="Visual dashboard">
+      <Handle type="target" position={Position.Left} />
+      <div className="flex items-center gap-2">
+        <BarChart3 size={15} />
+        <div className="truncate text-[13px] font-semibold">{dashboard.name}</div>
+      </div>
+      <div className="mt-1 truncate text-[11px] text-subtle">{dashboard.database}</div>
+      <div className="mt-2 text-[11px] text-muted">Open to rerun the charts</div>
+    </Frame>
+  );
+}
+
+export function SeedLinkNode({ data, selected }) {
+  const { seed, binding } = data;
+  return (
+    <Frame selected={selected} step="Pinned seed">
+      <Handle type="target" position={Position.Left} />
+      <div className="flex items-center gap-2">
+        <Sprout size={15} />
+        <div className="truncate text-[13px] font-semibold">{seed.name}</div>
+      </div>
+      <div className="mt-1 truncate font-mono text-[11px] text-subtle">{binding.database}</div>
+      <div className="mt-2 text-[11px] text-muted">Open to simulate and rerun</div>
+    </Frame>
+  );
+}
+
+function Action({ icon: Icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.();
+      }}
+      className="flex flex-col items-center gap-0.5 border border-dashed border-line px-1 py-1 text-[10px] uppercase tracking-[0.06em] text-muted hover:border-fg hover:text-fg"
+    >
+      <Icon size={13} />
+      {label}
+    </button>
   );
 }
 
@@ -155,4 +207,6 @@ export const nodeTypes = {
   storage: StorageNode,
   retention: RetentionNode,
   ghost: GhostNode,
+  dashboard: DashboardNode,
+  seedlink: SeedLinkNode,
 };

@@ -164,6 +164,66 @@ export async function explainSchema({ connectionId, database, focus }) {
   return { markdown: text, model, usage };
 }
 
+export async function draftDashboard({ connectionId, database, prompt }) {
+  if (!String(prompt || '').trim()) throw new Error('Describe the dashboard you want');
+  const { conn } = resolveConnection(connectionId);
+  const info = engineInfo(conn.engine);
+  const schema = await schemaContext(connectionId, database);
+  const isMongo = conn.engine === 'mongodb';
+  const dialect = isMongo
+    ? 'MongoDB. Each widget.query is a JSON object with "collection" and either "filter" or "pipeline". Aggregations should end with $group/$project/$sort/$limit. Never $out/$merge/$where.'
+    : `${info.label} SQL. Each widget.query is one read-only SELECT (or WITH ... SELECT). Quote identifiers. Always LIMIT 200 (TOP 200 on SQL Server). Prefer GROUP BY for charts.`;
+  const system = `You design read-only exploration dashboards for a local backup tool.
+Engine: ${dialect}
+Database: ${database}
+Schema:
+${schema}
+
+Reply as JSON:
+{
+  "title": "short name",
+  "summary": "2-4 sentences: what this dashboard shows and how the main entities connect (the data pipeline).",
+  "widgets": [
+    {
+      "id": "w1",
+      "type": "kpi | bar | line | pie | table | pipeline",
+      "title": "short",
+      "query": "read-only query string",
+      "explanation": "one sentence",
+      "objects": ["table_or_collection"],
+      "xKey": "category column for charts",
+      "yKey": "numeric column for charts",
+      "steps": [{ "object": "users", "role": "source" }]
+    }
+  ]
+}
+
+Rules:
+- 4 to 8 widgets. Mix 1-2 kpis, 2-3 charts, 1 table, and at most one pipeline.
+- KPI queries return one row with a numeric column.
+- Bar/line/pie queries return 2-20 rows with a label column (xKey) and a number (yKey).
+- Pipeline widgets describe the main data flow between objects in "steps" (no heavy query required; a small COUNT query is fine).
+- Never write, DDL, or stored procedures.
+- If the question is vague, pick the most useful operational view (volume, freshness, top categories, relation health).`;
+  const { text, model, usage } = await chat(
+    [
+      { role: 'system', content: system },
+      { role: 'user', content: String(prompt).slice(0, 2500) },
+    ],
+    { json: true, maxTokens: 2500 },
+  );
+  const parsed = extractJson(text);
+  const widgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+  if (!widgets.length) throw new Error('The assistant did not return any widgets. Try a more specific prompt.');
+  return {
+    title: String(parsed.title || 'Exploration dashboard').slice(0, 80),
+    summary: String(parsed.summary || '').slice(0, 1200),
+    widgets,
+    model,
+    usage,
+  };
+}
+
 export function clearSchemaCache(connectionId) {
   for (const key of schemaCache.keys()) if (key.startsWith(`${connectionId}:`)) schemaCache.delete(key);
 }

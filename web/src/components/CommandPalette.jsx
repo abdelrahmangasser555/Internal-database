@@ -6,7 +6,7 @@ import {
   CornerDownLeft,
   FolderArchive,
   KeyRound,
-  Moon,
+  Palette,
   Pencil,
   Play,
   Plus,
@@ -22,6 +22,7 @@ import { EngineLogo } from './EngineLogo.jsx';
 import { Kbd } from './ui.jsx';
 import { cn } from '../lib/cn.js';
 import { engineOf } from '../lib/engines.js';
+import { THEME_CHOICES } from '../lib/themes.js';
 
 const EVENT = 'bs:open-palette';
 export function openPalette() {
@@ -35,7 +36,7 @@ export function CommandPalette() {
   const listRef = useRef(null);
   const navigate = useNavigate();
   const { connections, jobs, openSheet, openAssistant, refresh, checkHealth } = useApp();
-  const { toggle } = useTheme();
+  const { setPref } = useTheme();
 
   useEffect(() => {
     const show = () => {
@@ -81,7 +82,14 @@ export function CommandPalette() {
           toast.success('Health check finished');
         },
       },
-      { id: 'theme', group: 'Actions', label: 'Toggle light / dark', icon: Moon, run: toggle },
+      ...THEME_CHOICES.map((item) => ({
+        id: `theme-${item.id}`,
+        group: 'Appearance',
+        label: `Theme · ${item.label}`,
+        hint: item.note,
+        icon: Palette,
+        run: () => setPref(item.id),
+      })),
       { id: 'rotate', group: 'Actions', label: 'Rotate passwords (MongoDB)', icon: KeyRound, run: () => navigate('/rotate') },
       ...connections.map((c) => ({
         id: `c-${c.id}`,
@@ -107,7 +115,7 @@ export function CommandPalette() {
     const needle = q.trim().toLowerCase();
     if (!needle) return all;
     return all.filter((i) => `${i.label} ${i.hint || ''} ${i.group}`.toLowerCase().includes(needle));
-  }, [connections, jobs, openSheet, openAssistant, navigate, q, toggle, refresh, checkHealth]);
+  }, [connections, jobs, openSheet, openAssistant, navigate, q, setPref, refresh, checkHealth]);
 
   useEffect(() => setActive(0), [q]);
   useEffect(() => {
@@ -135,7 +143,7 @@ export function CommandPalette() {
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 8, opacity: 0 }}
             transition={{ duration: 0.14 }}
-            className="mx-auto w-full max-w-xl overflow-hidden rounded-xl border border-line-strong bg-surface shadow-2xl"
+            className="mx-auto w-full max-w-xl overflow-hidden rounded-sm border border-dashed border-line-strong bg-surface"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2.5 border-b border-line px-4">

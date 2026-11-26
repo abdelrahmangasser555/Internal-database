@@ -10,6 +10,7 @@ import {
   restoreValue,
   topoSortTables,
 } from './sqlsafe.js';
+import { coerceSqlValue, createTableSql, recordColumns } from './seedwrite.js';
 
 let sqliteModule;
 async function lib() {
@@ -31,7 +32,11 @@ function q(ident) {
 
 async function open(conn, { write = false } = {}) {
   const file = sqlitePath(conn.uri);
-  if (!fs.existsSync(file)) throw new Error(`SQLite file not found: ${file}`);
+  if (!fs.existsSync(file)) {
+    if (!write) throw new Error(`SQLite file not found: ${file}`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '');
+  }
   const { DatabaseSync } = await lib();
   if (write) return new DatabaseSync(file, { readOnly: false });
   const key = conn.id || file;
@@ -357,5 +362,120 @@ export async function close(connectionId) {
     } catch {
       // ignore
     }
+  }
+}
+
+export async function permissions(conn) {
+  const file = sqlitePath(conn.uri);
+  let writable = false;
+  try {
+    fs.accessSync(file, fs.constants.W_OK);
+    writable = true;
+  } catch {
+    writable = false;
+  }
+  return {
+    user: 'local-file',
+    roles: [],
+    canRead: true,
+    canWrite: writable,
+    canCreate: writable,
+    canDrop: writable,
+    canAdmin: writable,
+    privileges: writable ? ['read', 'write'] : ['read'],
+    details: [{ resource: path.basename(file), actions: writable ? ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE'] : ['SELECT'] }],
+    notes: writable ? ['SQLite has no users. Permissions follow the file on disk.'] : ['The SQLite file is not writable by this process.'],
+  };
+}
+
+export async function seedEnsure(conn, _db, object) {
+  const db = await open(conn, { write: true });
+  try {
+    db.exec(createTableSql(object, 'sqlite', q, q(object.name)));
+    return { name: object.name, created: true };
+  } finally {
+    db.close();
+  }
+}
+
+export async function seedWipe(conn, _db, names) {
+  const db = await open(conn, { write: true });
+  const out = [];
+  try {
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    for (const name of names) {
+      const info = db.prepare(`SELECT COUNT(*) AS n FROM ${q(name)}`).get();
+      db.prepare(`DELETE FROM ${q(name)}`).run();
+      out.push({ name, deleted: Number(info?.n) || 0 });
+    }
+    db.exec('COMMIT');
+    return out;
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // ignore
+    }
+    throw err;
+  } finally {
+    try {
+      db.exec('PRAGMA foreign_keys = ON');
+    } catch {
+      // ignore
+    }
+    db.close();
+  }
+}
+
+export async function seedInsert(conn, _db, name, records) {
+  if (!records?.length) return { name, inserted: 0 };
+  const cols = recordColumns(records);
+  const db = await open(conn, { write: true });
+  try {
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    const stmt = db.prepare(`INSERT INTO ${q(name)} (${cols.map(q).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`);
+    for (const rec of records) {
+      stmt.run(
+        ...cols.map((c) => {
+          const v = coerceSqlValue(rec[c], { json: true, engine: 'sqlite' });
+          return typeof v === 'boolean' ? Number(v) : v;
+        }),
+      );
+    }
+    db.exec('COMMIT');
+    return { name, inserted: records.length };
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // ignore
+    }
+    throw err;
+  } finally {
+    try {
+      db.exec('PRAGMA foreign_keys = ON');
+    } catch {
+      // ignore
+    }
+    db.close();
+  }
+}
+
+export async function lookupKeys(conn, _db, name, field, values) {
+  const list = [...new Set((values || []).filter((v) => v != null && v !== ''))].slice(0, 200);
+  if (!list.length) return [];
+  const db = await open(conn);
+  try {
+    const stmt = db.prepare(`SELECT ${q(field)} AS k FROM ${q(name)} WHERE ${q(field)} = ?`);
+    const found = [];
+    for (const v of list) {
+      const row = stmt.get(String(v));
+      if (row) found.push(String(row.k));
+    }
+    return found;
+  } finally {
+    // read handle is cached
   }
 }

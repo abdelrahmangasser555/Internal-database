@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Check, KeyRound, Search, ShieldAlert, Users } from 'lucide-react';
+import { Check, Copy, Download, KeyRound, Search, ShieldAlert, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { API } from '../api.js';
 import { useApp } from '../state/AppState.jsx';
@@ -22,6 +22,9 @@ export function RotatePage() {
   const [userSearch, setUserSearch] = useState('');
   const [preview, setPreview] = useState(null);
   const [audit, setAudit] = useState([]);
+  const [auditQ, setAuditQ] = useState('');
+  const [auditFrom, setAuditFrom] = useState('');
+  const [auditTo, setAuditTo] = useState('');
   const [dbs, setDbs] = useState([]);
   const [cols, setCols] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -42,9 +45,20 @@ export function RotatePage() {
       'Hi {{name}},\n\nYour password for {{database}} has been rotated.\n\nUsername: {{username}}\nEmail: {{email}}\nNew password: {{password}}',
   });
 
+  const auditQuery = () => {
+    const params = new URLSearchParams();
+    if (auditQ.trim()) params.set('q', auditQ.trim());
+    if (auditFrom) params.set('from', auditFrom);
+    if (auditTo) params.set('to', auditTo);
+    return params.toString();
+  };
+
   useEffect(() => {
-    API.rotate.audit().then(setAudit).catch(() => {});
-  }, []);
+    const handle = setTimeout(() => {
+      API.rotate.audit(auditQuery()).then(setAudit).catch(() => {});
+    }, 180);
+    return () => clearTimeout(handle);
+  }, [auditQ, auditFrom, auditTo]);
 
   useEffect(() => {
     if (!form.connectionId && connections[0]?.id) setForm((prev) => ({ ...prev, connectionId: connections[0].id }));
@@ -120,7 +134,7 @@ export function RotatePage() {
     <div className="mx-auto max-w-[1200px] space-y-6 px-5 py-6 md:px-8">
       <PageHeader
         title="Password rotate"
-        subtitle="The one module that writes password hashes to MongoDB. Backups never modify collections. Hashes use bcrypt (Bahri-MOC-PCR)."
+        subtitle="Writes bcrypt hashes to MongoDB. The generated passwords are kept in the audit on this device so you can look one up and copy it."
       />
 
       <div className="flex items-center gap-2 rounded-lg border border-warn/25 bg-warn/8 px-3.5 py-2.5 text-[12.5px]">
@@ -135,7 +149,7 @@ export function RotatePage() {
               type="button"
               onClick={() => setStep(i)}
               className={cn(
-                'focus-ring inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12.5px] font-medium transition',
+                'focus-ring inline-flex h-8 items-center gap-2 rounded-sm border px-3 text-[12.5px] font-medium transition',
                 i === step ? 'border-primary bg-primary/12 text-fg' : i < step ? 'border-line text-fg' : 'border-line text-muted',
               )}
             >
@@ -345,22 +359,72 @@ export function RotatePage() {
         </Card>
 
         <Card>
-          <CardHeader title="Audit" subtitle="Recent hash writes on this device" />
-          <div className="mt-3 max-h-[520px] space-y-2 overflow-auto">
-            {audit.slice(0, 40).map((row, i) => (
-              <div key={i} className="rounded-md border border-line px-3 py-2 text-[12px]">
-                <div className="flex justify-between gap-2">
-                  <span className="truncate font-medium">{row.email || row.userId}</span>
+          <CardHeader
+            title="Audit"
+            subtitle="Search a user, filter by date, then copy the final password or download a text file."
+            action={
+              <Button
+                size="sm"
+                onClick={() => {
+                  const a = document.createElement('a');
+                  a.href = API.rotate.auditFile(auditQuery());
+                  a.download = '';
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                }}
+              >
+                <Download size={13} /> Text file
+              </Button>
+            }
+          />
+          <div className="mt-3 grid gap-2">
+            <div className="relative">
+              <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" />
+              <Input value={auditQ} onChange={(e) => setAuditQ(e.target.value)} placeholder="Name, email, username or id" className="h-8 pl-8 text-[12.5px]" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="From">
+                <Input type="date" value={auditFrom} onChange={(e) => setAuditFrom(e.target.value)} className="h-8 text-[12.5px]" />
+              </Field>
+              <Field label="To">
+                <Input type="date" value={auditTo} onChange={(e) => setAuditTo(e.target.value)} className="h-8 text-[12.5px]" />
+              </Field>
+            </div>
+          </div>
+          <LatestPasswords rows={audit} />
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-auto">
+            {audit.slice(0, 80).map((row, i) => (
+              <div key={`${row.at}-${row.userId}-${i}`} className="rounded-sm border border-dashed border-line px-3 py-2 text-[12px]">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="min-w-0 truncate font-medium">{row.name || row.email || row.userId}</span>
                   <span className="shrink-0 text-subtle" title={formatWhen(row.at)}>
                     {relativeTime(row.at)}
                   </span>
                 </div>
                 <div className="truncate text-subtle">
-                  {row.connectionName} · {row.database}.{row.collection}
+                  {row.email || row.username || row.userId} · {row.connectionName} · {row.database}.{row.collection}
                 </div>
+                <div className="mt-1.5 grid gap-0.5 font-mono text-[11px]">
+                  <span className="text-subtle">old {row.previousPassword || 'not recorded'}</span>
+                  <span className="text-fg">new {row.password || 'not recorded'}</span>
+                </div>
+                {row.password ? (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="mt-1.5"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(row.password);
+                      toast.success('Copied password');
+                    }}
+                  >
+                    <Copy size={12} /> Copy
+                  </Button>
+                ) : null}
               </div>
             ))}
-            {!audit.length ? <p className="text-[12.5px] text-subtle">No rotations yet.</p> : null}
+            {!audit.length ? <p className="text-[12.5px] text-subtle">No rotations match this search.</p> : null}
           </div>
         </Card>
       </div>
@@ -385,7 +449,7 @@ export function RotatePage() {
             const result = await API.rotate.execute(p);
             toast.success(`Updated ${result.updated} users with ${result.algorithm.algorithm} (${result.algorithm.rounds} rounds)`);
             setConfirmOpen(false);
-            setAudit(await API.rotate.audit());
+            setAudit(await API.rotate.audit(auditQuery()));
           } catch (err) {
             toast.error(err.message);
           } finally {
@@ -393,6 +457,41 @@ export function RotatePage() {
           }
         }}
       />
+    </div>
+  );
+}
+
+function LatestPasswords({ rows }) {
+  const latest = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const key = `${row.database}|${row.collection}|${row.userId}`;
+    if (seen.has(key) || !row.password) continue;
+    seen.add(key);
+    latest.push(row);
+    if (latest.length >= 6) break;
+  }
+  if (!latest.length) return null;
+  return (
+    <div className="mt-3 grid gap-2">
+      {latest.map((row) => (
+        <div key={`${row.userId}-${row.database}`} className="flex items-center gap-2 border border-dashed border-line-strong bg-bg-2 px-2.5 py-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12px] font-medium">{row.name || row.email || row.userId}</div>
+            <div className="truncate font-mono text-[11px] text-fg">{row.password}</div>
+          </div>
+          <Button
+            size="xs"
+            variant="primary"
+            onClick={async () => {
+              await navigator.clipboard.writeText(row.password);
+              toast.success('Copied final password');
+            }}
+          >
+            <Copy size={12} /> Final
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }

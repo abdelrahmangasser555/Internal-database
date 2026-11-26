@@ -1,65 +1,126 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
-@import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
 /*
   Backup Service brand kit
   ------------------------
-  Colour   : neutral graphite surfaces + one accent ("Iris") + semantic ok/warn/danger/info.
-  Type     : Inter (UI) and JetBrains Mono (data, code). Scale 11 / 12 / 13 / 14 / 16 / 20 / 24 / 30.
-  Radius   : 6 (controls) · 10 (inputs, buttons) · 14 (cards) · 20 (panels).
-  Spacing  : 4px grid (Tailwind default).
-  Themes   : dark is the default; light mirrors every token. Set data-theme on <html>.
+  Colour   : flat VS Code / Next.js greys. White is the action colour. No background gradients.
+  Type     : Segoe UI (the VS Code UI face on Windows) and JetBrains Mono (data, code).
+  Radius   : 2px. Cards sit on a dashed 1px line.
+  Themes   : data-theme on <html> (dark, ink, slate, light, sand). data-scheme is light or dark.
 */
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant dark (&:where([data-scheme="dark"], [data-scheme="dark"] *));
 
 :root,
 [data-theme="dark"] {
-  --bg: #0a0b0e;
-  --bg-2: #0e1014;
-  --surface: #121419;
-  --surface-2: #181b21;
-  --surface-3: #20242c;
-  --line: rgb(255 255 255 / 0.07);
-  --line-strong: rgb(255 255 255 / 0.13);
-  --fg: #eceef2;
-  --muted: #9097a3;
-  --subtle: #636a76;
-  --primary: #7c83ff;
-  --primary-strong: #9aa0ff;
-  --primary-fg: #0b0c1a;
-  --ok: #3ddc97;
-  --warn: #f5b942;
+  --bg: #1a1a1a;
+  --bg-2: #141414;
+  --surface: #242424;
+  --surface-2: #2e2e2e;
+  --surface-3: #3a3a3a;
+  --line: #4a4a4a;
+  --line-strong: #6e6e6e;
+  --fg: #f4f4f4;
+  --muted: #c2c2c2;
+  --subtle: #9a9a9a;
+  --primary: #f7f7f7;
+  --primary-strong: #ffffff;
+  --primary-fg: #141414;
+  --ok: #3fb950;
+  --warn: #e3b341;
   --danger: #ff6b6b;
-  --info: #5cc8ff;
-  --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -12px rgb(0 0 0 / 0.6);
-  --glow: radial-gradient(1200px 500px at 10% -20%, rgb(124 131 255 / 0.12), transparent 60%),
-    radial-gradient(900px 400px at 110% -10%, rgb(92 200 255 / 0.06), transparent 55%);
+  --info: #6cb6ff;
+  --shadow: none;
+  color-scheme: dark;
+}
+
+[data-theme="ink"] {
+  --bg: #000000;
+  --bg-2: #000000;
+  --surface: #111111;
+  --surface-2: #1a1a1a;
+  --surface-3: #242424;
+  --line: #333333;
+  --line-strong: #5c5c5c;
+  --fg: #ffffff;
+  --muted: #d4d4d4;
+  --subtle: #a3a3a3;
+  --primary: #ffffff;
+  --primary-strong: #ffffff;
+  --primary-fg: #000000;
+  --ok: #4ade80;
+  --warn: #f5c451;
+  --danger: #ff7070;
+  --info: #7cc4ff;
+  --shadow: none;
+  color-scheme: dark;
+}
+
+[data-theme="slate"] {
+  --bg: #0e1520;
+  --bg-2: #0a1018;
+  --surface: #162033;
+  --surface-2: #1d2a40;
+  --surface-3: #263650;
+  --line: #31445f;
+  --line-strong: #5b7eab;
+  --fg: #f4f8ff;
+  --muted: #c9d7ee;
+  --subtle: #93a9c9;
+  --primary: #f4f8ff;
+  --primary-strong: #ffffff;
+  --primary-fg: #0e1520;
+  --ok: #4ade80;
+  --warn: #f5c451;
+  --danger: #ff8080;
+  --info: #8ec5ff;
+  --shadow: none;
   color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --bg: #f6f7f9;
-  --bg-2: #eff1f4;
+  --bg: #f3f3f3;
+  --bg-2: #e8e8e8;
   --surface: #ffffff;
-  --surface-2: #f4f5f8;
-  --surface-3: #eaedf2;
-  --line: rgb(15 23 42 / 0.08);
-  --line-strong: rgb(15 23 42 / 0.14);
-  --fg: #0f1422;
-  --muted: #5d6576;
-  --subtle: #8a92a2;
-  --primary: #4f5bff;
-  --primary-strong: #3a46f0;
+  --surface-2: #f6f6f6;
+  --surface-3: #e7e7e7;
+  --line: #c8c8c8;
+  --line-strong: #8f8f8f;
+  --fg: #111111;
+  --muted: #3d3d3d;
+  --subtle: #6b6b6b;
+  --primary: #111111;
+  --primary-strong: #000000;
   --primary-fg: #ffffff;
-  --ok: #10a36b;
-  --warn: #c98510;
-  --danger: #e04848;
-  --info: #0a8fd8;
-  --shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
-  --glow: radial-gradient(1200px 500px at 10% -20%, rgb(79 91 255 / 0.08), transparent 60%);
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --danger: #cf222e;
+  --info: #0969da;
+  --shadow: none;
+  color-scheme: light;
+}
+
+[data-theme="sand"] {
+  --bg: #f3eee4;
+  --bg-2: #e7dfd1;
+  --surface: #fffdf8;
+  --surface-2: #f7f1e6;
+  --surface-3: #efe4d2;
+  --line: #d5c8b2;
+  --line-strong: #a89274;
+  --fg: #1c1612;
+  --muted: #4e4338;
+  --subtle: #7a6b58;
+  --primary: #1c1612;
+  --primary-strong: #000000;
+  --primary-fg: #fffdf8;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --danger: #b42318;
+  --info: #0b5cab;
+  --shadow: none;
   color-scheme: light;
 }
 
@@ -81,12 +142,12 @@
   --color-warn: var(--warn);
   --color-danger: var(--danger);
   --color-info: var(--info);
-  --font-sans: "Inter Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Code", Consolas, monospace;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Cascadia Mono", ui-monospace, Consolas, monospace;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
   --shadow-card: var(--shadow);
 }
 
@@ -100,7 +161,7 @@ body,
 body {
   font-family: var(--font-sans);
   font-size: 13px;
-  font-feature-settings: "cv11", "ss01", "ss03";
+  letter-spacing: 0.01em;
   background: var(--bg);
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
@@ -131,14 +192,14 @@ body {
 }
 
 .app-glow {
-  background: var(--glow), var(--bg);
+  background: var(--bg);
 }
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  border: 1px dashed var(--line-strong);
+  border-radius: 2px;
+  box-shadow: none;
 }
 
 .hairline {
@@ -167,10 +228,9 @@ body {
   to { background-position: 200% 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
-  border-radius: 6px;
+  background: var(--surface-3);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+  border-radius: 2px;
 }
 
 /* Code / JSON */
@@ -197,7 +257,7 @@ body {
 /* React Flow theming */
 .react-flow {
   --xy-background-color: transparent;
-  --xy-node-border-radius: 14px;
+  --xy-node-border-radius: 2px;
   --xy-edge-stroke: var(--line-strong);
   --xy-handle-background-color: var(--surface-3);
   --xy-handle-border-color: var(--line-strong);
@@ -212,12 +272,12 @@ body {
 .react-flow__controls {
   box-shadow: var(--shadow) !important;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 2px;
   overflow: hidden;
 }
 .react-flow__minimap {
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 2px;
   overflow: hidden;
 }
 .react-flow__node { font-family: var(--font-sans); }

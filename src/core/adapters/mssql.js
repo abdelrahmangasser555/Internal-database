@@ -10,6 +10,7 @@ import {
   restoreValue,
   topoSortTables,
 } from './sqlsafe.js';
+import { coerceSqlValue, createTableSql, emptyPermission, recordColumns } from './seedwrite.js';
 
 // SQL Server support. Read paths run inside a transaction that is always rolled back
 // and go through the read-only statement guard.
@@ -441,4 +442,95 @@ export async function close(connectionId) {
         .catch(() => {});
     }
   }
+}
+
+export async function permissions(conn, db) {
+  try {
+    const p = await pool(conn, db);
+    const who = await p.request().query(`
+      SELECT SYSTEM_USER AS login_name, USER_NAME() AS user_name, DB_NAME() AS database_name,
+             IS_SRVROLEMEMBER('sysadmin') AS sysadmin,
+             IS_MEMBER('db_owner') AS db_owner,
+             IS_MEMBER('db_datareader') AS datareader,
+             IS_MEMBER('db_datawriter') AS datawriter
+    `);
+    const u = who.recordset[0] || {};
+    let perms = [];
+    try {
+      const r = await p.request().query(`SELECT permission_name FROM fn_my_permissions(NULL, 'DATABASE')`);
+      perms = r.recordset.map((row) => row.permission_name);
+    } catch {
+      perms = [];
+    }
+    const blob = perms.join(' ').toUpperCase();
+    return {
+      user: u.user_name || u.login_name || 'unknown',
+      roles: [u.sysadmin ? 'sysadmin' : null, u.db_owner ? 'db_owner' : null, u.datareader ? 'db_datareader' : null, u.datawriter ? 'db_datawriter' : null].filter(Boolean),
+      canRead: Boolean(u.datareader || u.db_owner || u.sysadmin) || blob.includes('SELECT'),
+      canWrite: Boolean(u.datawriter || u.db_owner || u.sysadmin) || blob.includes('INSERT'),
+      canCreate: Boolean(u.db_owner || u.sysadmin) || blob.includes('CREATE'),
+      canDrop: Boolean(u.db_owner || u.sysadmin) || blob.includes('DELETE'),
+      canAdmin: Boolean(u.sysadmin || u.db_owner),
+      privileges: perms.slice(0, 40),
+      details: [{ resource: u.database_name || db, actions: perms.slice(0, 12) }],
+      notes: u.login_name ? [`Login ${u.login_name}`] : [],
+    };
+  } catch (err) {
+    return emptyPermission({ notes: [err.message] });
+  }
+}
+
+export async function seedEnsure(conn, db, object) {
+  const p = await pool(conn, db);
+  const { schema } = splitName(object.name);
+  if (schema && schema !== 'dbo') {
+    await p.request().batch(`IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'${schema.replace(/'/g, "''")}') EXEC('CREATE SCHEMA ${q(schema)}')`);
+  }
+  await p.request().batch(createTableSql(object, 'mssql', q, qName(object.name)));
+  return { name: object.name, created: true };
+}
+
+export async function seedWipe(conn, db, names) {
+  const p = await pool(conn, db);
+  const out = [];
+  for (const name of names) {
+    const r = await p.request().query(`DELETE FROM ${qName(name)}; SELECT @@ROWCOUNT AS n`);
+    const n = r.recordset?.[0]?.n ?? r.rowsAffected?.[0] ?? 0;
+    out.push({ name, deleted: Number(n) || 0 });
+  }
+  return out;
+}
+
+export async function seedInsert(conn, db, name, records) {
+  if (!records?.length) return { name, inserted: 0 };
+  const cols = recordColumns(records);
+  const p = await pool(conn, db);
+  const tx = new sql.Transaction(p);
+  await tx.begin();
+  try {
+    await new sql.Request(tx).batch(`SET IDENTITY_INSERT ${qName(name)} ON`).catch(() => {});
+    let inserted = 0;
+    for (const rec of records) {
+      const r = new sql.Request(tx);
+      cols.forEach((c, i) => r.input(`p${i}`, coerceSqlValue(rec[c], { json: true, engine: 'mssql' })));
+      await r.query(`INSERT INTO ${qName(name)} (${cols.map(q).join(', ')}) VALUES (${cols.map((_, i) => `@p${i}`).join(', ')})`);
+      inserted += 1;
+    }
+    await new sql.Request(tx).batch(`SET IDENTITY_INSERT ${qName(name)} OFF`).catch(() => {});
+    await tx.commit();
+    return { name, inserted };
+  } catch (err) {
+    await tx.rollback().catch(() => {});
+    throw err;
+  }
+}
+
+export async function lookupKeys(conn, db, name, field, values) {
+  const list = [...new Set((values || []).filter((v) => v != null && v !== ''))].slice(0, 200);
+  if (!list.length) return [];
+  const p = await pool(conn, db);
+  const req = p.request();
+  list.forEach((v, i) => req.input(`p${i}`, sql.NVarChar, String(v)));
+  const r = await req.query(`SELECT ${q(field)} AS k FROM ${qName(name)} WHERE ${q(field)} IN (${list.map((_, i) => `@p${i}`).join(', ')})`);
+  return r.recordset.map((row) => String(row.k));
 }

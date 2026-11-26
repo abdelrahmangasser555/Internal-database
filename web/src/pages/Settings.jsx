@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Bot, Info, Mail, Monitor, Moon, Palette, Power, ShieldCheck, Sun } from 'lucide-react';
+import { Bot, Check, Info, Mail, Palette, Power, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { API } from '../api.js';
 import { useApp } from '../state/AppState.jsx';
 import { useTheme } from '../state/Theme.jsx';
-import { Badge, Button, Card, CardHeader, Field, Input, KeyValue, PageHeader, Switch, Tabs } from '../components/ui.jsx';
+import { Badge, Button, Card, CardHeader, Field, Input, KeyValue, PageHeader, Switch } from '../components/ui.jsx';
+import { THEME_CHOICES } from '../lib/themes.js';
+import { cn } from '../lib/cn.js';
 import { formatWhen } from '../lib/format.js';
 
 function sqliteReady(v) {
@@ -64,17 +66,33 @@ export function SettingsPage() {
       <PageHeader title="Settings" subtitle="Device-local options. Secrets stay in .env and the encrypted data folder on this machine." />
 
       <Card>
-        <CardHeader title="Appearance" icon={Palette} subtitle="Dark is the default. Your choice is remembered on this device." />
-        <div className="mt-4">
-          <Tabs
-            value={pref}
-            onChange={setPref}
-            tabs={[
-              { id: 'dark', label: 'Dark', icon: Moon },
-              { id: 'light', label: 'Light', icon: Sun },
-              { id: 'system', label: 'System', icon: Monitor },
-            ]}
-          />
+        <CardHeader title="Appearance" icon={Palette} subtitle="Pick a palette. Graphite is brighter than the old grey. Your choice is remembered on this device." />
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {THEME_CHOICES.map((item) => {
+            const active = item.id === pref;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setPref(item.id)}
+                className={cn(
+                  'border border-dashed p-2.5 text-left',
+                  active ? 'border-fg bg-surface-2' : 'border-line-strong hover:border-fg',
+                )}
+              >
+                <span className="flex h-8 overflow-hidden border border-dashed border-line-strong">
+                  <span className="flex-1" style={{ background: item.swatch.bg }} />
+                  <span className="flex-1" style={{ background: item.swatch.surface }} />
+                  <span className="w-2" style={{ background: item.swatch.fg }} />
+                </span>
+                <span className="mt-2 flex items-center gap-1.5 text-[12.5px] font-medium">
+                  {item.label}
+                  {active ? <Check size={12} /> : null}
+                </span>
+                <span className="block text-[11px] text-subtle">{item.note}</span>
+              </button>
+            );
+          })}
         </div>
       </Card>
 
@@ -91,7 +109,11 @@ export function SettingsPage() {
               Using <code className="font-mono">OPENROUTER_API_KEY</code> from .env. Remove it there to manage the key here instead.
             </p>
           ) : (
-            <Field label="OpenRouter API key" hint="Stored encrypted with this device's master key and never sent back to the browser.">
+            <Field
+              label="OpenRouter API key"
+              hint="Stored encrypted with this device's master key and never sent back to the browser."
+              info="Used for the assistant, schema tours, and Analytics dashboards. Row data is not sent; only table/column names and your prompt."
+            >
               <div className="flex gap-2">
                 <Input type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={ai.hasKey ? '•••••••• saved' : 'sk-or-…'} autoComplete="off" />
                 <Button
@@ -155,7 +177,11 @@ export function SettingsPage() {
       <Card>
         <CardHeader title="Password rotation" icon={ShieldCheck} subtitle="Hashing used by the Rotate module (MongoDB only)." />
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="Bcrypt rounds" hint="Same as Bahri-MOC-PCR by default (10).">
+          <Field
+            label="Bcrypt rounds"
+            hint="Same as Bahri-MOC-PCR by default (10)."
+            info="Higher is slower and harder to brute-force. Rotate writes password hashes only — it never stores the new password."
+          >
             <Input
               type="number"
               min="8"

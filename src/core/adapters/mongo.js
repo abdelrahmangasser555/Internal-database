@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import { finished } from 'node:stream/promises';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import { EJSON } from 'bson';
 import {
   closeClient,
@@ -16,6 +16,7 @@ import {
   testUri,
 } from '../mongo.js';
 import { clampLimit } from './sqlsafe.js';
+import { emptyPermission } from './seedwrite.js';
 
 export const engine = 'mongodb';
 
@@ -331,4 +332,118 @@ export async function restore(conn, db, { names, readRows, readIndexes, onProgre
 
 export async function close(connectionId) {
   await closeClient(connectionId);
+}
+
+function mongoKey(value) {
+  if (value && typeof value === 'object') {
+    if (value.$oid) return String(value.$oid);
+    if (value._bsontype === 'ObjectId') return String(value);
+  }
+  return value == null ? null : String(value);
+}
+
+function toMongoValue(value) {
+  try {
+    return EJSON.deserialize(value);
+  } catch {
+    return value;
+  }
+}
+
+async function writeMongo(conn) {
+  const client = new MongoClient(conn.uri, { serverSelectionTimeoutMS: 12_000, connectTimeoutMS: 12_000 });
+  await client.connect();
+  return client;
+}
+
+export async function permissions(conn, db) {
+  const client = await getClient(conn.id);
+  try {
+    const status = await client.db(db || 'admin').command({ connectionStatus: 1, showPrivileges: true });
+    const info = status.authInfo || {};
+    const users = info.authenticatedUsers || [];
+    const roles = (info.authenticatedUserRoles || []).map((r) => `${r.role}@${r.db}`);
+    const privs = info.authenticatedUserPrivileges || [];
+    const actions = new Set();
+    for (const p of privs) for (const a of p.actions || []) actions.add(a);
+    const roleBlob = roles.join(' ').toLowerCase();
+    const has = (name) => actions.has(name) || /root|restore/.test(roleBlob);
+    return {
+      user: users.map((u) => `${u.user}@${u.db}`).join(', ') || 'authenticated',
+      roles,
+      canRead: has('find') || /read|readwrite|root|dbadmin/.test(roleBlob) || !roles.length,
+      canWrite: has('insert') || /readwrite|root/.test(roleBlob),
+      canCreate: has('createCollection') || has('insert') || /readwrite|root/.test(roleBlob),
+      canDrop: has('dropCollection') || /root|dbadmin/.test(roleBlob),
+      canAdmin: /root|useradmin|dbadmin/.test(roleBlob),
+      privileges: [...actions].sort().slice(0, 48),
+      details: privs.slice(0, 24).map((p) => ({
+        resource: p.resource?.collection != null ? `${p.resource.db || '*'}.${p.resource.collection || '*'}` : JSON.stringify(p.resource || {}),
+        actions: p.actions || [],
+      })),
+      notes: roles.length ? [] : ['Could not list roles; the user may lack connectionStatus privileges.'],
+    };
+  } catch (err) {
+    return emptyPermission({ user: 'unknown', notes: [err.message] });
+  }
+}
+
+export async function seedEnsure(conn, db, object) {
+  const client = await writeMongo(conn);
+  try {
+    await client.db(db).createCollection(object.name).catch(() => {});
+    return { name: object.name, created: true };
+  } finally {
+    await client.close();
+  }
+}
+
+export async function seedWipe(conn, db, names) {
+  const client = await writeMongo(conn);
+  const out = [];
+  try {
+    const database = client.db(db);
+    for (const name of names) {
+      const result = await database.collection(name).deleteMany({});
+      out.push({ name, deleted: result.deletedCount || 0 });
+    }
+    return out;
+  } finally {
+    await client.close();
+  }
+}
+
+export async function seedInsert(conn, db, name, records) {
+  if (!records?.length) return { name, inserted: 0 };
+  const client = await writeMongo(conn);
+  try {
+    const docs = records.map((r) => toMongoValue(structuredClone(r)));
+    const result = await client.db(db).collection(name).insertMany(docs, { ordered: true });
+    return { name, inserted: result.insertedCount || docs.length };
+  } finally {
+    await client.close();
+  }
+}
+
+export async function lookupKeys(conn, db, name, field, values) {
+  const list = [...new Set((values || []).map(mongoKey).filter((v) => v != null))].slice(0, 200);
+  if (!list.length) return [];
+  const client = await getClient(conn.id);
+  const queryValues = list.map((v) => {
+    if (field === '_id' && /^[a-f0-9]{24}$/i.test(v)) {
+      try {
+        return new ObjectId(v);
+      } catch {
+        return v;
+      }
+    }
+    return v;
+  });
+  const docs = await client
+    .db(db)
+    .collection(name)
+    .find({ [field]: { $in: queryValues } }, { projection: { [field]: 1 } })
+    .limit(200)
+    .toArray();
+  return docs.map((d) => mongoKey(d[field] ?? d._id));
 }

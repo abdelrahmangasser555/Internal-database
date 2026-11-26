@@ -254,6 +254,21 @@ export function BackupsPage() {
           <Button
             size="sm"
             onClick={async () => {
+              toast.message('File window opening — look behind this browser if it does not come forward');
+              try {
+                const { path } = await API.file();
+                if (path) setImportPath(path);
+                else toast.message('No file selected');
+              } catch (err) {
+                toast.error(err.message);
+              }
+            }}
+          >
+            Browse
+          </Button>
+          <Button
+            size="sm"
+            onClick={async () => {
               if (!importPath.trim()) return toast.error('Path required');
               try {
                 await API.records.import({ filePath: importPath.trim() });

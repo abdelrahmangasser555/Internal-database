@@ -27,6 +27,7 @@ export default defineConfig({
           react: ['react', 'react-dom', 'react-router-dom'],
           flow: ['@xyflow/react', '@dagrejs/dagre'],
           motion: ['framer-motion'],
+          charts: ['recharts'],
         },
       },
     },

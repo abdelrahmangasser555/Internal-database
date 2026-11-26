@@ -54,6 +54,31 @@ export const API = {
       api(
         `/api/connections/${id}/databases/${encodeURIComponent(db)}/collections/${encodeURIComponent(col)}/users${q}`,
       ),
+    permissions: (id, db) =>
+      api(`/api/connections/${id}/permissions${db ? `?db=${encodeURIComponent(db)}` : ''}`),
+  },
+  seeds: {
+    list: () => api('/api/seeds'),
+    get: (id) => api(`/api/seeds/${id}`),
+    save: (body) =>
+      api(body.id ? `/api/seeds/${body.id}` : '/api/seeds', {
+        method: body.id ? 'PUT' : 'POST',
+        body,
+      }),
+    remove: (id) => api(`/api/seeds/${id}`, { method: 'DELETE' }),
+    validate: (payload) => api('/api/seeds/validate', { method: 'POST', body: { payload } }),
+    simulate: (body) => api('/api/seeds/simulate', { method: 'POST', body }),
+    apply: (body) => api('/api/seeds/apply', { method: 'POST', body }),
+    skills: () => api('/api/seeds/skills'),
+    example: () => api('/api/seeds/example'),
+  },
+  dashboards: {
+    list: () => api('/api/dashboards'),
+    get: (id) => api(`/api/dashboards/${id}`),
+    create: (body) => api('/api/dashboards', { method: 'POST', body }),
+    run: (id) => api(`/api/dashboards/${id}/run`, { method: 'POST' }),
+    save: (body) => api(`/api/dashboards/${body.id}`, { method: 'PUT', body }),
+    remove: (id) => api(`/api/dashboards/${id}`, { method: 'DELETE' }),
   },
   jobs: {
     list: () => api('/api/jobs'),
@@ -80,9 +105,11 @@ export const API = {
   rotate: {
     preview: (body) => api('/api/rotate/preview', { method: 'POST', body }),
     execute: (body) => api('/api/rotate/execute', { method: 'POST', body }),
-    audit: () => api('/api/rotate/audit'),
+    audit: (query = '') => api(`/api/rotate/audit${query ? `?${query}` : ''}`),
+    auditFile: (query = '') => `/api/rotate/audit.txt${query ? `?${query}` : ''}`,
   },
   folder: () => api('/api/dialogs/folder', { method: 'POST' }),
+  file: () => api('/api/dialogs/file', { method: 'POST' }),
   autostart: {
     get: () => api('/api/autostart'),
     enable: () => api('/api/autostart/enable', { method: 'POST' }),

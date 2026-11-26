@@ -7,12 +7,25 @@
     <title>Backup Service</title>
     <link rel="icon" type="image/svg+xml" href="/brand/mark.svg" />
     <script>
-      // Apply the saved theme before first paint (dark by default).
+      // Apply the saved theme before first paint (Graphite by default).
       (function () {
         try {
-          var t = localStorage.getItem('bs-theme') || 'dark';
-          if (t === 'system') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-          document.documentElement.dataset.theme = t;
+          var known = { dark: 'dark', ink: 'dark', slate: 'dark', light: 'light', sand: 'light' };
+          var saved = localStorage.getItem('bs-theme') || 'dark';
+          var theme = saved;
+          var scheme = 'dark';
+          if (saved === 'system') {
+            var light = matchMedia('(prefers-color-scheme: light)').matches;
+            theme = light ? 'light' : 'dark';
+            scheme = light ? 'light' : 'dark';
+          } else if (known[saved]) {
+            theme = saved;
+            scheme = known[saved];
+          } else {
+            theme = 'dark';
+          }
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.scheme = scheme;
         } catch (e) {}
       })();
     </script>

@@ -98,7 +98,7 @@ export function RestoreSheet() {
           <p className="text-[13px] text-muted">Add a {info.label} connection first to restore this backup.</p>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Target connection">
+            <Field label="Target connection" info="Must be the same engine family as the backup. Restore only writes into empty or missing tables/collections.">
               <Select value={connectionId} onChange={(e) => setConnectionId(e.target.value)}>
                 {targets.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -107,7 +107,11 @@ export function RestoreSheet() {
                 ))}
               </Select>
             </Field>
-            <Field label="Target database" hint={engine === 'sqlite' ? 'SQLite restores into the connection file.' : 'Created on first write if it does not exist (MongoDB).'}>
+            <Field
+              label="Target database"
+              hint={engine === 'sqlite' ? 'SQLite restores into the connection file.' : 'Created on first write if it does not exist (MongoDB).'}
+              info="Type this name again to confirm the write. Restore will refuse if any chosen object already has rows."
+            >
               <Input list="restore-dbs" value={database} onChange={(e) => setDatabase(e.target.value)} disabled={engine === 'sqlite'} className="font-mono text-[12.5px]" />
               <datalist id="restore-dbs">
                 {dbs.map((d) => (
