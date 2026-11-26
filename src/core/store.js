@@ -5,14 +5,17 @@ import { detectEngine, maskUri as maskConnectionUri } from './engines.js';
 import {
   CONNECTIONS_FILE,
   DASHBOARDS_FILE,
+  INSIGHT_FILE,
   JOBS_FILE,
   RECORDS_FILE,
   ROTATION_AUDIT_FILE,
+  SCHEMAS_FILE,
   SEEDS_FILE,
   SETTINGS_FILE,
   WRITE_AUDIT_FILE,
 } from './paths.js';
 import { parseSeed, summarizeSeed } from './seed-format.js';
+import { normalizeSchema } from './schema-format.js';
 
 function readJson(file, fallback) {
   try {
@@ -357,4 +360,64 @@ export function deleteDashboard(id) {
     DASHBOARDS_FILE,
     listDashboards().filter((item) => item.id !== id),
   );
+}
+
+export function listSchemaDrafts() {
+  return readJson(SCHEMAS_FILE, []);
+}
+
+export function getSchemaDraft(id) {
+  return listSchemaDrafts().find((row) => row.id === id) || null;
+}
+
+export function saveSchemaDraft(input) {
+  const rows = listSchemaDrafts();
+  const now = new Date().toISOString();
+  let row = input.id ? rows.find((item) => item.id === input.id) : null;
+  if (!row) {
+    row = { id: input.id || newId(), createdAt: now };
+    rows.unshift(row);
+  }
+  const schema = normalizeSchema({
+    ...(input.schema && typeof input.schema === 'object' ? input.schema : input),
+    name: input.name || input.schema?.name,
+    engine: input.engine || input.schema?.engine,
+    description: input.description ?? input.schema?.description,
+  });
+  row.name = schema.name;
+  row.engine = schema.engine;
+  row.description = schema.description;
+  row.schema = schema;
+  row.updatedAt = now;
+  writeJson(SCHEMAS_FILE, rows);
+  return row;
+}
+
+export function deleteSchemaDraft(id) {
+  writeJson(
+    SCHEMAS_FILE,
+    listSchemaDrafts().filter((item) => item.id !== id),
+  );
+}
+
+const INSIGHT_KEEP = 48;
+
+export function recordInsightSample(connectionId, sample) {
+  if (!connectionId) return [];
+  const all = readJson(INSIGHT_FILE, {});
+  const list = Array.isArray(all[connectionId]) ? all[connectionId] : [];
+  list.push({
+    at: new Date().toISOString(),
+    connectionsCurrent: sample.connectionsCurrent ?? null,
+    totalCreated: sample.totalCreated ?? null,
+    databases: sample.databases ?? null,
+  });
+  all[connectionId] = list.slice(-INSIGHT_KEEP);
+  writeJson(INSIGHT_FILE, all);
+  return all[connectionId];
+}
+
+export function insightHistory(connectionId) {
+  const all = readJson(INSIGHT_FILE, {});
+  return Array.isArray(all[connectionId]) ? all[connectionId] : [];
 }

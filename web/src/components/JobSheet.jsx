@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { FolderOpen, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { API } from '../api.js';
@@ -22,8 +23,10 @@ function Section({ title, children }) {
 
 export function JobSheet() {
   const { sheet, closeSheet, refresh, connections } = useApp();
+  const { connectionId: routeConnectionId } = useParams();
   const open = sheet?.type === 'job';
   const preset = open ? sheet.job || {} : {};
+  const lockConnection = Boolean(open && (sheet.lockConnection || routeConnectionId) && (preset.connectionId || routeConnectionId));
 
   const [form, setForm] = useState({});
   const [busy, setBusy] = useState(false);
@@ -35,7 +38,7 @@ export function JobSheet() {
     if (!open) return;
     setForm({
       name: preset.name || 'Nightly backup',
-      connectionId: preset.connectionId || connections[0]?.id || '',
+      connectionId: preset.connectionId || routeConnectionId || connections[0]?.id || '',
       database: preset.database || '',
       scope: preset.collections?.length && !preset.allCollections ? 'some' : 'all',
       collections: preset.collections || [],
@@ -53,7 +56,7 @@ export function JobSheet() {
       verifyAfter: preset.verifyAfter !== false,
     });
     setBusy(false);
-  }, [open, preset.id]);
+  }, [open, preset.id, routeConnectionId]);
 
   const conn = connections.find((c) => c.id === form.connectionId);
   const info = engineOf(conn?.engine);
@@ -165,7 +168,11 @@ export function JobSheet() {
               <Input value={form.name || ''} onChange={set('name')} />
             </Field>
             <Field label="Connection">
-              <Select value={form.connectionId || ''} onChange={(e) => setForm((f) => ({ ...f, connectionId: e.target.value, database: '', collections: [] }))}>
+              <Select
+                value={form.connectionId || ''}
+                disabled={lockConnection}
+                onChange={(e) => setForm((f) => ({ ...f, connectionId: e.target.value, database: '', collections: [] }))}
+              >
                 {connections.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} · {engineOf(c.engine).label}

@@ -47,15 +47,25 @@ export const API = {
       });
       return api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/objects/${encodeURIComponent(name)}/rows?${qs}`);
     },
+    fetchOne: (id, db, name, { field, value }) => {
+      const qs = new URLSearchParams();
+      qs.set('field', field);
+      qs.set('value', typeof value === 'object' ? JSON.stringify(value) : String(value));
+      return api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/objects/${encodeURIComponent(name)}/fetch?${qs}`);
+    },
     query: (id, db, text, limit) =>
       api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/query`, { method: 'POST', body: { text, limit } }),
     graph: (id, db) => api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/graph`),
+    analyze: (id, db) =>
+      api(`/api/connections/${id}/databases/${encodeURIComponent(db)}/analyze`, { method: 'POST' }),
     users: (id, db, col, q = '') =>
       api(
         `/api/connections/${id}/databases/${encodeURIComponent(db)}/collections/${encodeURIComponent(col)}/users${q}`,
       ),
     permissions: (id, db) =>
       api(`/api/connections/${id}/permissions${db ? `?db=${encodeURIComponent(db)}` : ''}`),
+    insight: (id, db) =>
+      api(`/api/connections/${id}/insight${db ? `?db=${encodeURIComponent(db)}` : ''}`),
   },
   seeds: {
     list: () => api('/api/seeds'),
@@ -72,11 +82,27 @@ export const API = {
     skills: () => api('/api/seeds/skills'),
     example: () => api('/api/seeds/example'),
   },
+  schemas: {
+    list: () => api('/api/schemas'),
+    get: (id) => api(`/api/schemas/${id}`),
+    save: (body) =>
+      api(body.id ? `/api/schemas/${body.id}` : '/api/schemas', {
+        method: body.id ? 'PUT' : 'POST',
+        body,
+      }),
+    remove: (id) => api(`/api/schemas/${id}`, { method: 'DELETE' }),
+    talk: (id, body) => api(`/api/schemas/${id}/talk`, { method: 'POST', body }),
+    analyze: (id) => api(`/api/schemas/${id}/analyze`, { method: 'POST' }),
+  },
   dashboards: {
     list: () => api('/api/dashboards'),
     get: (id) => api(`/api/dashboards/${id}`),
     create: (body) => api('/api/dashboards', { method: 'POST', body }),
     run: (id) => api(`/api/dashboards/${id}/run`, { method: 'POST' }),
+    revise: (id, instruction) => api(`/api/dashboards/${id}/revise`, { method: 'POST', body: { instruction } }),
+    addWidget: (id, body) => api(`/api/dashboards/${id}/widgets`, { method: 'POST', body }),
+    repair: (id) => api(`/api/dashboards/${id}/repair`, { method: 'POST' }),
+    preview: (body) => api('/api/dashboards/preview', { method: 'POST', body }),
     save: (body) => api(`/api/dashboards/${body.id}`, { method: 'PUT', body }),
     remove: (id) => api(`/api/dashboards/${id}`, { method: 'DELETE' }),
   },

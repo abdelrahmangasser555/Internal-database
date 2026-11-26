@@ -5,13 +5,14 @@ Local database backup scheduler, explorer and restore tool for **MongoDB, Postgr
 ## Run
 
 ```bash
-npm install
 npm start
 ```
 
+or `pnpm start`. That command (and `npm run dev` / `pnpm dev`) is enough on a new machine: it pulls the latest commit from the git remote this branch tracks (when the working tree is clean), installs dependencies with whichever of npm/pnpm/yarn you used, builds the React dashboard, and starts it. Windows and Ubuntu use the same scripts (`start.bat` / `start.sh` call the same launcher).
+
 Dashboard: `http://127.0.0.1:4780`
 
-`npm start` rebuilds the dashboard automatically when `web/dist` is missing or older than `web/src`.
+Set `BACKUP_SKIP_PULL=1` if you do not want a git pull (local edits are never overwritten — pull is skipped automatically when the tree is dirty).
 
 During UI development (hot reload):
 
@@ -19,7 +20,7 @@ During UI development (hot reload):
 npm run dev
 ```
 
-Vite serves the dashboard at `http://127.0.0.1:5173` and proxies `/api` to the Express app on `4780`.
+Vite serves the dashboard at `http://127.0.0.1:5173` and proxies `/api` to the Express app on `4780`. Only the React app in `web/` is served.
 
 Headless worker only (for boot):
 
@@ -80,17 +81,21 @@ The connection must use a user that can create tables and insert rows. Your read
 
 ## Explore
 
-- A tree of connections → databases → tables/collections with row counts and search.
+The dashboard is **connection-first**. The home page lists connections. Open one to explore, schedule backups, run analytics, apply seeds, view its pipeline, or rotate MongoDB passwords.
+
+- A tree of databases → tables/collections with row counts and search, scoped to the open connection.
 - **Data**: paginated grid with sorting and a column filter (SQL) or a JSON filter (MongoDB); click a row for the full JSON.
 - **Structure**: columns/fields with types, keys, defaults, indexes and foreign keys.
 - **Query**: read-only editor with `Ctrl + Enter`, history and a row cap.
-- **Diagram**: an ER diagram drawn with React Flow; MongoDB relations are inferred from `…Id` fields.
-- **Flow** page: each job drawn as Source → Snapshot → Storage → Retention.
+- **Diagram**: an ER diagram drawn with React Flow; MongoDB relations are inferred from `…Id` fields. **Analyze** reads schema, indexes, row counts and samples (every engine, read-only) and paints bottlenecks on the diagram itself.
+- **Schema builder** (sidebar, not tied to a connection): brainstorm collections/tables, relations and notes; talk to the assistant or edit by hand. Drafts live in `data/schemas.json`. Analyze flags missing keys, bad joins, hot collections and similar issues on the canvas.
+- **Flow** tab: each job on that connection drawn as Source → Snapshot → Storage → Retention.
+- **Analytics**: describe any read-only question (joins, time series, funnels, quality checks) or paste a query. Widgets can be KPIs, bar/line/area/pie/stacked/scatter/funnel, tables, pipelines or notes. You can iterate with a follow-up, add widgets, edit queries, and ask the assistant to repair failures. Nothing writes to the source database.
 - `Ctrl + K` opens the command palette, `Ctrl + J` the assistant.
 
 ## Assistant (optional)
 
-Add an OpenRouter key to turn on two helpers: **draft a query from plain language** (shown for review, checked by the same read-only guard, and only run when you click Run) and **explain a schema**. Only table, column and type names are sent; row data never leaves the device.
+Add an OpenRouter key to turn on helpers: **draft a query from plain language** (shown for review, checked by the same read-only guard, and only run when you click Run), **explain a schema**, **generate or revise analytics dashboards**, and **draft or critique schema-builder canvases**. Only table, column and type names (plus truncated field samples for dashboards and live Analyze) are sent; row data never leaves the device. Schema-builder Analyze still runs a local rule pass with no key.
 
 - Put `OPENROUTER_API_KEY=` in `.env`, or paste the key in **Settings → Assistant** (stored encrypted with the device master key and never returned to the browser).
 - The default model is `deepseek/deepseek-v4.1-flash`. Change it in Settings or with `OPENROUTER_MODEL`.
@@ -129,8 +134,7 @@ The dashboard follows a small brand kit in `web/src/index.css`: CSS-variable tok
 
 ```bash
 chmod +x start.sh
-npm install
-npm start
+./start.sh
 npm run install:service
 loginctl enable-linger "$USER"
 ```

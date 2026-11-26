@@ -279,6 +279,26 @@ export async function rows(conn, db, name, { skip = 0, limit = 50, sort, filter 
   };
 }
 
+export async function fetchOne(conn, db, name, { field, value }) {
+  if (!field) throw new Error('field is required');
+  const meta = await describe(conn, db, name);
+  if (!meta.columns.some((c) => c.name === field)) throw new Error(`Unknown column ${field}`);
+  const data = await readOnly(conn, db, (c) =>
+    c.query({ text: `SELECT * FROM ${qName(name)} WHERE ${q(field)} = $1 LIMIT 1`, values: [value] }),
+  );
+  if (!data.rows[0]) return { found: false, object: name, field };
+  const row = {};
+  for (const f of data.fields) row[f.name] = displayValue(data.rows[0][f.name]);
+  return {
+    found: true,
+    object: name,
+    field,
+    columns: meta.columns.map((c) => ({ name: c.name, type: c.type })),
+    row,
+    primaryKey: meta.primaryKey,
+  };
+}
+
 export async function query(conn, db, text, { limit = 500 } = {}) {
   const sql = assertReadOnlySql(text);
   const cap = clampLimit(limit, 500, 5000);
@@ -640,6 +660,72 @@ export async function seedInsert(conn, db, name, records) {
   } finally {
     await client.end().catch(() => {});
   }
+}
+
+export async function insight(conn, db) {
+  const target = db || defaultDb(conn.uri);
+  return readOnly(conn, target, async (c) => {
+    const info = await c.query(
+      `SELECT version() AS version,
+              current_database() AS db,
+              current_user AS user_name,
+              inet_server_addr()::text AS host,
+              inet_server_port() AS port,
+              pg_postmaster_start_time() AS started,
+              current_setting('max_connections') AS max_connections,
+              current_setting('server_version') AS server_version`,
+    );
+    const size = await c.query('SELECT pg_database_size(current_database()) AS size').catch(() => ({ rows: [{ size: 0 }] }));
+    const backends = await c
+      .query(
+        `SELECT count(*)::int AS current,
+                count(*) FILTER (WHERE state = 'active')::int AS active
+           FROM pg_stat_activity
+          WHERE datname = current_database()`,
+      )
+      .catch(() => ({ rows: [{ current: null, active: null }] }));
+    const dbs = await c
+      .query(
+        `SELECT datname AS name, pg_database_size(datname) AS size
+           FROM pg_database
+          WHERE NOT datistemplate AND has_database_privilege(datname, 'CONNECT')
+          ORDER BY datname`,
+      )
+      .catch(() => ({ rows: [] }));
+    let objects = [];
+    try {
+      objects = (await listObjects(conn, target)).slice(0, 40);
+    } catch {
+      objects = [];
+    }
+    const row = info.rows[0] || {};
+    const version = (/PostgreSQL ([\d.]+)/.exec(row.version) || [])[1] || row.server_version || row.version;
+    return {
+      version,
+      process: 'postgres',
+      topology: 'standalone',
+      host: row.host || null,
+      instanceType: `PostgreSQL ${version || ''}`.trim(),
+      os: { type: row.version || null, name: 'PostgreSQL', version: version || null },
+      uptimeSec: row.started ? Math.round((Date.now() - new Date(row.started).getTime()) / 1000) : null,
+      connections: {
+        current: backends.rows[0]?.current ?? null,
+        available:
+          row.max_connections != null && backends.rows[0]?.current != null
+            ? Math.max(0, Number(row.max_connections) - Number(backends.rows[0].current))
+            : null,
+        max: row.max_connections != null ? Number(row.max_connections) : null,
+        active: backends.rows[0]?.active ?? null,
+        totalCreated: null,
+      },
+      databases: dbs.rows.map((d) => ({ name: d.name, sizeOnDisk: Number(d.size) || 0 })),
+      database: target,
+      objects,
+      dataSize: Number(size.rows[0]?.size) || 0,
+      provider: null,
+      notes: [],
+    };
+  });
 }
 
 export async function lookupKeys(conn, db, name, field, values) {

@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-node src\index.js
-pause
+node scripts\launch.js start
+if errorlevel 1 pause

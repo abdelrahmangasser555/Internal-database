@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { fileURLToPath } from 'node:url';
-import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, publicSettings, listRotationAudit, listWriteAudit, listSeeds, getSeed, saveSeed, deleteSeed, patchSeed, listDashboards, getDashboard, saveDashboard, deleteDashboard } from './core/store.js';
+import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, publicSettings, listRotationAudit, listWriteAudit, listSeeds, getSeed, saveSeed, deleteSeed, patchSeed, listDashboards, getDashboard, saveDashboard, deleteDashboard, listSchemaDrafts, getSchemaDraft, saveSchemaDraft, deleteSchemaDraft } from './core/store.js';
+import { connectionInsight } from './core/insight.js';
 import { listCollections, findDocuments, collectionStats, listIndexes, sampleUsers, closeClient } from './core/mongo.js';
 import { runBackup, getRunning, listRunning, recordExists, decryptRecord, importBackupFile, tempDecryptDir } from './core/backup.js';
 import { resolveConnection, testConnectionUri, healthCheckAll, closeAdapter } from './core/adapters/index.js';
@@ -13,7 +13,9 @@ import { aiStatus, draftQuery, explainSchema, clearSchemaCache, testAi } from '.
 import { applySeed, fullSeed, publicSeed, simulateSeed } from './core/seeds.js';
 import { listSkills } from './core/seed-skills.js';
 import { exampleSeed, validateSeed } from './core/seed-format.js';
-import { createDashboard, runDashboard } from './core/dashboards.js';
+import { addDashboardWidget, createDashboard, previewQuery, repairDashboard, reviseDashboard, runDashboard } from './core/dashboards.js';
+import { analyzeDraft, analyzeLive, draftSchema, publicDraft } from './core/schema-studio.js';
+import { emptySchema } from './core/schema-format.js';
 import { computeNextRun, describeInterval, formatNext } from './core/schedule.js';
 import { pickFile, pickFolder } from './core/dialogs.js';
 import { revealPath, revealRecord } from './core/explorer.js';
@@ -23,7 +25,6 @@ import { sendHtmlEmail, fromAddress } from './core/email.js';
 import { deviceName, ROOT } from './core/paths.js';
 import { getHashConfig } from './core/hash.js';
 
-const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
 const uiDist = path.join(ROOT, 'web', 'dist');
 
 function wrap(fn) {
@@ -42,8 +43,7 @@ export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '8mb' }));
-  const resolveUiRoot = () => (fs.existsSync(path.join(uiDist, 'index.html')) ? uiDist : uiDir);
-  app.use((req, res, next) => express.static(resolveUiRoot())(req, res, next));
+  app.use((req, res, next) => express.static(uiDist)(req, res, next));
 
   app.get('/api/meta', (_req, res) => {
     res.json({
@@ -172,7 +172,7 @@ export function createApp() {
       res.json(
         await sampleUsers(req.params.id, req.params.db, req.params.col, {
           skip: Number(req.query.skip || 0),
-          limit: Number(req.query.limit || 100),
+          limit: Number(req.query.limit || 200),
           search: String(req.query.search || ''),
         }),
       );
@@ -195,6 +195,28 @@ export function createApp() {
     wrap(async (req, res) => {
       const { conn, adapter } = resolveConnection(req.params.id);
       res.json(await adapter.describe(conn, req.params.db, req.params.name));
+    }),
+  );
+
+  app.get(
+    `${dbBase}/objects/:name/fetch`,
+    wrap(async (req, res) => {
+      const { conn, adapter } = resolveConnection(req.params.id);
+      if (typeof adapter.fetchOne !== 'function') throw new Error('This engine does not support linked lookups');
+      const field = String(req.query.field || '').trim();
+      const value = req.query.value;
+      if (!field) throw new Error('field is required');
+      if (value == null || value === '') throw new Error('value is required');
+      const targetObject = req.params.name;
+      let parsed = value;
+      if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+        try {
+          parsed = JSON.parse(value);
+        } catch {
+          parsed = value;
+        }
+      }
+      res.json(await adapter.fetchOne(conn, req.params.db, targetObject, { field, value: parsed }));
     }),
   );
 
@@ -238,6 +260,13 @@ export function createApp() {
     }),
   );
 
+  app.post(
+    `${dbBase}/analyze`,
+    wrap(async (req, res) => {
+      res.json(await analyzeLive({ connectionId: req.params.id, database: req.params.db }));
+    }),
+  );
+
   app.get(
     '/api/connections/:id/permissions',
     wrap(async (req, res) => {
@@ -245,6 +274,13 @@ export function createApp() {
       const db = req.query.db ? String(req.query.db) : undefined;
       if (typeof adapter.permissions !== 'function') throw new Error('This engine does not report privileges');
       res.json(await adapter.permissions(conn, db));
+    }),
+  );
+
+  app.get(
+    '/api/connections/:id/insight',
+    wrap(async (req, res) => {
+      res.json(await connectionInsight(req.params.id, req.query.db ? String(req.query.db) : undefined));
     }),
   );
 
@@ -566,17 +602,52 @@ export function createApp() {
     }),
   );
   app.post(
+    '/api/dashboards/preview',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      res.json(await previewQuery(body));
+    }),
+  );
+  app.post(
     '/api/dashboards',
     wrap(async (req, res) => {
       const body = req.body || {};
       if (!body.connectionId || !body.database) throw new Error('Pick a connection and database');
-      res.json(await createDashboard({ connectionId: body.connectionId, database: body.database, prompt: body.prompt }));
+      res.json(
+        await createDashboard({
+          connectionId: body.connectionId,
+          database: body.database,
+          prompt: body.prompt,
+          query: body.query,
+          type: body.type,
+          title: body.title,
+        }),
+      );
     }),
   );
   app.post(
     '/api/dashboards/:id/run',
     wrap(async (req, res) => {
       res.json(await runDashboard(req.params.id));
+    }),
+  );
+  app.post(
+    '/api/dashboards/:id/revise',
+    wrap(async (req, res) => {
+      res.json(await reviseDashboard({ id: req.params.id, instruction: req.body?.instruction }));
+    }),
+  );
+  app.post(
+    '/api/dashboards/:id/widgets',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      res.json(await addDashboardWidget({ id: req.params.id, prompt: body.prompt, query: body.query, type: body.type, title: body.title }));
+    }),
+  );
+  app.post(
+    '/api/dashboards/:id/repair',
+    wrap(async (req, res) => {
+      res.json(await repairDashboard(req.params.id));
     }),
   );
   app.put(
@@ -592,16 +663,73 @@ export function createApp() {
     res.json({ ok: true });
   });
 
+  app.get('/api/schemas', (_req, res) => res.json(listSchemaDrafts().map(publicDraft)));
+
+  app.post(
+    '/api/schemas',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      const schema = body.schema || emptySchema({ name: body.name, engine: body.engine, description: body.description });
+      res.json(saveSchemaDraft({ ...body, schema }));
+    }),
+  );
+
+  app.get('/api/schemas/:id', (req, res) => {
+    const row = getSchemaDraft(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Schema draft not found' });
+    res.json(row);
+  });
+
+  app.put(
+    '/api/schemas/:id',
+    wrap(async (req, res) => {
+      const existing = getSchemaDraft(req.params.id);
+      if (!existing) throw new Error('Schema draft not found');
+      res.json(saveSchemaDraft({ ...existing, ...req.body, id: req.params.id, schema: req.body?.schema || existing.schema }));
+    }),
+  );
+
+  app.post(
+    '/api/schemas/:id/talk',
+    wrap(async (req, res) => {
+      const existing = getSchemaDraft(req.params.id);
+      if (!existing) throw new Error('Schema draft not found');
+      const { schema, model } = await draftSchema({
+        prompt: req.body?.prompt,
+        engine: req.body?.engine || existing.engine,
+        current: existing.schema,
+      });
+      const saved = saveSchemaDraft({ id: req.params.id, schema, name: schema.name, engine: schema.engine, description: schema.description });
+      res.json({ ...saved, model });
+    }),
+  );
+
+  app.post(
+    '/api/schemas/:id/analyze',
+    wrap(async (req, res) => {
+      const existing = getSchemaDraft(req.params.id);
+      if (!existing) throw new Error('Schema draft not found');
+      const result = await analyzeDraft(existing.schema);
+      const saved = saveSchemaDraft({ id: req.params.id, schema: result.schema, name: result.schema.name, engine: result.schema.engine });
+      res.json({ ...saved, findings: result.findings, summary: result.summary, model: result.model, ai: result.ai, error: result.error });
+    }),
+  );
+
+  app.delete('/api/schemas/:id', (req, res) => {
+    deleteSchemaDraft(req.params.id);
+    res.json({ ok: true });
+  });
+
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     if (req.path.startsWith('/api')) return next();
-    const indexFile = path.join(resolveUiRoot(), 'index.html');
+    const indexFile = path.join(uiDist, 'index.html');
     if (!fs.existsSync(indexFile)) {
       res
         .status(503)
         .type('html')
         .send(
-          '<p>UI is not built. Run <code>npm run build:ui</code> or <code>npm run dev</code>.</p>',
+          '<p>The dashboard is not built. Run <code>npm start</code> or <code>pnpm start</code> (builds the React UI), or <code>npm run dev</code> for hot reload on port 5173.</p>',
         );
       return;
     }

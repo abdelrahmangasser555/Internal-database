@@ -245,6 +245,29 @@ export async function rows(conn, db, name, { skip = 0, limit = 50, sort, filter 
   });
 }
 
+export async function fetchOne(conn, db, name, { field, value }) {
+  if (!field) throw new Error('field is required');
+  const meta = await describe(conn, db, name);
+  if (!meta.columns.some((c) => c.name === field)) throw new Error(`Unknown column ${field}`);
+  return readOnly(conn, db, async (c) => {
+    const [rows, fields] = await c.query({
+      sql: `SELECT * FROM ${q(name)} WHERE ${q(field)} = ? LIMIT 1`,
+      values: [value],
+    });
+    if (!rows[0]) return { found: false, object: name, field };
+    const row = {};
+    for (let i = 0; i < fields.length; i += 1) row[fields[i].name] = displayValue(rows[0][i]);
+    return {
+      found: true,
+      object: name,
+      field,
+      columns: meta.columns.map((col) => ({ name: col.name, type: col.type })),
+      row,
+      primaryKey: meta.primaryKey,
+    };
+  });
+}
+
 export async function query(conn, db, text, { limit = 500 } = {}) {
   const sql = assertReadOnlySql(text);
   const cap = clampLimit(limit, 500, 5000);
@@ -497,6 +520,72 @@ export async function seedInsert(conn, db, name, records) {
     await c.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {});
     await c.end().catch(() => {});
   }
+}
+
+export async function insight(conn, db) {
+  const target = db || defaultDb(conn.uri);
+  return readOnly(conn, target, async (c) => {
+    const [[ver]] = await c.query('SELECT VERSION() AS v, DATABASE() AS db, @@hostname AS host, @@port AS port, @@version_comment AS comment');
+    const status = async (name) => {
+      try {
+        const [rows] = await c.query('SHOW STATUS LIKE ?', [name]);
+        return rows[0]?.Value != null ? Number(rows[0].Value) || rows[0].Value : null;
+      } catch {
+        return null;
+      }
+    };
+    const variable = async (name) => {
+      try {
+        const [rows] = await c.query('SHOW VARIABLES LIKE ?', [name]);
+        return rows[0]?.Value ?? null;
+      } catch {
+        return null;
+      }
+    };
+    const [threads, maxUsed, maxConn, compileOs, dbs] = await Promise.all([
+      status('Threads_connected'),
+      status('Max_used_connections'),
+      variable('max_connections'),
+      variable('version_compile_os'),
+      c.query(
+        `SELECT s.SCHEMA_NAME AS name, COALESCE(SUM(t.DATA_LENGTH + t.INDEX_LENGTH), 0) AS size
+           FROM information_schema.SCHEMATA s LEFT JOIN information_schema.TABLES t ON t.TABLE_SCHEMA = s.SCHEMA_NAME
+          GROUP BY s.SCHEMA_NAME ORDER BY s.SCHEMA_NAME`,
+      ).catch(() => [[]]),
+    ]);
+    let objects = [];
+    if (target) {
+      try {
+        objects = (await listObjects(conn, target)).slice(0, 40);
+      } catch {
+        objects = [];
+      }
+    }
+    const flavor = /mariadb/i.test(String(ver.v)) ? 'MariaDB' : 'MySQL';
+    const databases = (dbs[0] || [])
+      .filter((r) => !SYSTEM_DBS.has(r.name))
+      .map((r) => ({ name: r.name, sizeOnDisk: Number(r.size) || 0 }));
+    return {
+      version: String(ver.v || '').split('-')[0],
+      process: flavor.toLowerCase(),
+      topology: 'standalone',
+      host: ver.host || null,
+      instanceType: `${flavor} ${String(ver.v || '').split('-')[0]}`.trim(),
+      os: { type: compileOs, name: ver.comment || flavor, version: String(ver.v || '') },
+      connections: {
+        current: threads,
+        available: maxConn != null && threads != null ? Math.max(0, Number(maxConn) - Number(threads)) : null,
+        max: maxConn != null ? Number(maxConn) : null,
+        active: threads,
+        totalCreated: maxUsed,
+      },
+      databases,
+      database: target || ver.db || null,
+      objects,
+      dataSize: databases.reduce((s, d) => s + (d.sizeOnDisk || 0), 0),
+      notes: [],
+    };
+  });
 }
 
 export async function lookupKeys(conn, db, name, field, values) {

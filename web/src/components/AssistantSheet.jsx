@@ -7,6 +7,7 @@ import { useApp } from '../state/AppState.jsx';
 import { Badge, Button, Empty, Field, Select, Sheet, Tabs, Textarea } from './ui.jsx';
 import { DataGrid, Markdown, documentsToGrid } from './DataGrid.jsx';
 import { engineOf, shortName } from '../lib/engines.js';
+import { explorePath } from '../lib/paths.js';
 
 const SUGGEST = {
   sql: ['Top 10 customers by total order value', 'Orders per status this month', 'Tables with the most rows', 'Rows added in the last 7 days'],
@@ -225,7 +226,7 @@ export function AssistantSheet() {
                     size="sm"
                     onClick={() => {
                       closeAssistant();
-                      navigate(`/browse/${connectionId}/${encodeURIComponent(db)}`, { state: { tab: 'query', query: draft.query } });
+                      navigate(explorePath(connectionId, db), { state: { tab: 'query', query: draft.query } });
                     }}
                   >
                     Open in editor

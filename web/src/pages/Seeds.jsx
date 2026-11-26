@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Check, Copy, FlaskConical, Plus, Sprout, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, Copy, FlaskConical, Plus, Shield, Sprout, Trash2, Upload, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { API } from '../api.js';
 import { useApp } from '../state/AppState.jsx';
@@ -8,12 +8,13 @@ import { Badge, Button, Card, Confirm, Empty, Field, InfoTip, Input, PageHeader,
 import { EngineLogo } from '../components/EngineLogo.jsx';
 import { engineOf } from '../lib/engines.js';
 import { cn } from '../lib/cn.js';
+import { rememberConnection, seedsPath } from '../lib/paths.js';
 
 export function SeedsPage() {
-  const { seedId } = useParams();
+  const { seedId, connectionId: routeConnectionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const target = location.state || null;
+  const target = location.state || (routeConnectionId ? { connectionId: routeConnectionId } : null);
   const { connections } = useApp();
   const [tab, setTab] = useState('library');
   const [seeds, setSeeds] = useState([]);
@@ -29,7 +30,7 @@ export function SeedsPage() {
     if (pick) {
       const full = await API.seeds.get(pick);
       setSelected(full);
-      navigate(`/seeds/${full.id}`, { replace: true });
+      navigate(routeConnectionId ? seedsPath(routeConnectionId, full.id) : `/seeds/${full.id}`, { replace: true });
     } else setSelected(null);
   };
 
@@ -96,7 +97,7 @@ export function SeedsPage() {
                   key={s.id}
                   type="button"
                   onClick={() => {
-                    navigate(`/seeds/${s.id}`);
+                    navigate(routeConnectionId ? seedsPath(routeConnectionId, s.id) : `/seeds/${s.id}`);
                     API.seeds.get(s.id).then(setSelected).catch((err) => toast.error(err.message));
                   }}
                   className={cn(
@@ -320,6 +321,7 @@ function SeedDetail({ seed, connections, target, onDeleted, onUpdated }) {
           <Field label="Connection">
             <Select
               value={connectionId}
+              disabled={Boolean(target?.connectionId)}
               onChange={(e) => {
                 setConnectionId(e.target.value);
                 setDatabase('');
@@ -454,50 +456,127 @@ function SeedDetail({ seed, connections, target, onDeleted, onUpdated }) {
   );
 }
 
+function objectTone(o, issues) {
+  if (o.action === 'blocked' || issues.some((i) => i.level === 'error')) return 'fail';
+  if (o.willCreate || issues.some((i) => i.level === 'warn')) return 'warn';
+  return 'ok';
+}
+
 function SimReport({ sim }) {
   const errors = sim.issues.filter((i) => i.level === 'error');
   const warns = sim.issues.filter((i) => i.level === 'warn');
+  const okCount = sim.objects.filter((o) => objectTone(o, sim.issues.filter((i) => i.object === o.name)) === 'ok').length;
+  const failCount = sim.objects.filter((o) => objectTone(o, sim.issues.filter((i) => i.object === o.name)) === 'fail').length;
+  const warnCount = sim.objects.length - okCount - failCount;
+  const maxLive = Math.max(1, ...sim.objects.map((o) => o.liveRows || 0), ...sim.objects.map((o) => o.seedRecords || 0));
+
   return (
-    <div className="mt-5 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={sim.canApply ? 'ok' : 'fail'} dot>
-          {sim.canApply ? 'Ready to apply' : 'Blocked'}
+    <div className="mt-5 space-y-4">
+      <div className="grid gap-2 sm:grid-cols-4">
+        <SimStat
+          icon={sim.canApply ? CheckCircle2 : XCircle}
+          tone={sim.canApply ? 'ok' : 'fail'}
+          label={sim.canApply ? 'Ready to apply' : 'Blocked'}
+          value={sim.canApply ? 'Pass' : `${errors.length} error${errors.length === 1 ? '' : 's'}`}
+        />
+        <SimStat icon={Sprout} tone="muted" label="Will insert" value={sim.totals?.insert || 0} />
+        <SimStat icon={Trash2} tone={sim.wipe ? 'warn' : 'muted'} label="Will wipe" value={sim.wipe ? sim.totals?.wipe || 0 : 0} />
+        <SimStat icon={Shield} tone="muted" label="Privileges" value={sim.permissions?.user || 'unknown'} hint={`read ${sim.permissions?.canRead ? 'yes' : 'no'} · write ${sim.permissions?.canWrite ? 'yes' : 'no'} · create ${sim.permissions?.canCreate ? 'yes' : 'no'}`} />
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-[11.5px]">
+        <Badge tone="ok" dot>
+          {okCount} ready
         </Badge>
-        <span className="text-[12px] text-muted">
-          insert {sim.totals?.insert || 0}
-          {sim.wipe ? ` · wipe ~${sim.totals?.wipe || 0} live rows` : ''}
-          {sim.permissions?.user ? ` · as ${sim.permissions.user}` : ''}
-        </span>
+        {warnCount ? (
+          <Badge tone="warn" dot>
+            {warnCount} warnings
+          </Badge>
+        ) : null}
+        {failCount ? (
+          <Badge tone="fail" dot>
+            {failCount} blocked
+          </Badge>
+        ) : null}
       </div>
+
       <div className="overflow-hidden rounded-md border border-line">
-        {sim.objects.map((o) => (
-          <div key={o.name} className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-line px-3 py-2 text-[12.5px] last:border-0">
-            <span className="font-mono">{o.name}</span>
-            <span className="text-muted">{o.exists ? `${o.liveRows} live` : 'missing'}</span>
-            <span className={o.action === 'blocked' ? 'text-danger' : 'text-fg'}>{o.action}</span>
-          </div>
-        ))}
+        {sim.objects.map((o) => {
+          const issues = sim.issues.filter((i) => i.object === o.name);
+          const tone = objectTone(o, issues);
+          const Icon = tone === 'fail' ? XCircle : tone === 'warn' ? AlertTriangle : CheckCircle2;
+          const toneClass = tone === 'fail' ? 'text-danger' : tone === 'warn' ? 'text-warn' : 'text-ok';
+          return (
+            <div key={o.name} className="border-b border-line px-3 py-3 last:border-0">
+              <div className="flex items-start gap-3">
+                <Icon size={16} className={cn('mt-0.5 shrink-0', toneClass)} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[13px] font-medium">{o.name}</span>
+                    <Badge tone={tone === 'fail' ? 'fail' : tone === 'warn' ? 'warn' : 'ok'}>{o.action}</Badge>
+                    {o.willCreate ? <Badge tone="warn">will create</Badge> : null}
+                    {o.willWipe ? <Badge tone="warn">will wipe</Badge> : null}
+                    {o.missingColumns?.length ? <Badge tone="fail">{o.missingColumns.length} missing columns</Badge> : null}
+                  </div>
+                  <div className="mt-2 grid gap-1.5">
+                    <BarRow label="On target" value={o.exists ? o.liveRows : 0} max={maxLive} empty={!o.exists} emptyLabel="missing" />
+                    <BarRow label="In seed" value={o.seedRecords || 0} max={maxLive} />
+                  </div>
+                  {issues.length ? (
+                    <ul className="mt-2 space-y-1">
+                      {issues.map((i, idx) => (
+                        <li key={idx} className={cn('text-[12px]', i.level === 'error' ? 'text-danger' : 'text-warn')}>
+                          {i.message}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-[12px] text-subtle">Checks passed. {o.seedRecords || 0} records will insert{o.willWipe ? ' after wipe' : ''}.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {!sim.objects.length ? <p className="px-3 py-4 text-[12.5px] text-subtle">No objects in this seed.</p> : null}
       </div>
-      {errors.length ? (
-        <ul className="space-y-1 text-[12.5px] text-danger">
-          {errors.map((i, idx) => (
-            <li key={idx}>{i.message}</li>
-          ))}
+
+      {sim.issues.filter((i) => !i.object).length ? (
+        <ul className="space-y-1 text-[12.5px]">
+          {sim.issues
+            .filter((i) => !i.object)
+            .map((i, idx) => (
+              <li key={idx} className={i.level === 'error' ? 'text-danger' : 'text-warn'}>
+                {i.message}
+              </li>
+            ))}
         </ul>
       ) : null}
-      {warns.length ? (
-        <ul className="space-y-1 text-[12.5px] text-warn">
-          {warns.slice(0, 8).map((i, idx) => (
-            <li key={idx}>{i.message}</li>
-          ))}
-        </ul>
-      ) : null}
-      {sim.permissions ? (
-        <p className="text-[12px] text-subtle">
-          Privileges: read {sim.permissions.canRead ? 'yes' : 'no'} · write {sim.permissions.canWrite ? 'yes' : 'no'} · create{' '}
-          {sim.permissions.canCreate ? 'yes' : 'no'}
-        </p>
-      ) : null}
+    </div>
+  );
+}
+
+function SimStat({ icon: Icon, tone, label, value, hint }) {
+  return (
+    <div className="rounded-md border border-dashed border-line px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2 text-[11.5px] text-muted">
+        {label}
+        <Icon size={14} className={tone === 'ok' ? 'text-ok' : tone === 'fail' ? 'text-danger' : tone === 'warn' ? 'text-warn' : 'text-subtle'} />
+      </div>
+      <div className="mt-1 truncate text-[15px] font-semibold tracking-[-0.02em]">{value}</div>
+      {hint ? <div className="mt-0.5 truncate text-[11px] text-subtle">{hint}</div> : null}
+    </div>
+  );
+}
+
+function BarRow({ label, value, max, empty, emptyLabel }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-2 text-[11.5px]">
+      <span className="text-subtle">{label}</span>
+      <div className="h-1.5 overflow-hidden rounded-sm bg-surface-2">
+        <div className={cn('h-full', empty ? 'bg-danger/70' : 'bg-primary')} style={{ width: empty ? '100%' : `${Math.max(4, (Number(value) / max) * 100)}%`, opacity: empty ? 0.35 : 1 }} />
+      </div>
+      <span className="num text-muted">{empty ? emptyLabel : Number(value).toLocaleString()}</span>
     </div>
   );
 }

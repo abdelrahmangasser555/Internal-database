@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Info, LoaderCircle, X } from 'lucide-react';
+import { Copy, Info, LoaderCircle, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '../lib/cn.js';
 
 export const Button = forwardRef(function Button(
@@ -8,24 +9,24 @@ export const Button = forwardRef(function Button(
   ref,
 ) {
   const variants = {
-    primary: 'bg-primary text-primary-fg border-primary hover:bg-primary-strong',
-    secondary: 'bg-transparent text-fg border-dashed border-line-strong hover:border-fg hover:bg-surface-2',
-    ghost: 'bg-transparent text-muted border-dashed border-transparent hover:border-line-strong hover:text-fg',
-    danger: 'bg-transparent text-danger border-dashed border-danger/50 hover:bg-danger/10',
-    quiet: 'bg-transparent text-muted border-dashed border-transparent hover:border-line-strong hover:text-fg',
+    primary: 'btn-primary bg-primary text-primary-fg border-primary hover:bg-primary-strong',
+    secondary: 'bg-transparent text-fg border-line-strong hover:border-fg hover:bg-surface-2',
+    ghost: 'bg-transparent text-muted border-transparent hover:border-line-strong hover:text-fg',
+    danger: 'bg-transparent text-danger border-danger/50 hover:bg-danger/10',
+    quiet: 'bg-transparent text-muted border-transparent hover:border-line-strong hover:text-fg',
   };
   const sizes = {
-    xs: 'h-7 px-2 text-[11px] gap-1.5 rounded-sm uppercase tracking-[0.08em]',
-    sm: 'h-8 px-2.5 text-[11.5px] gap-1.5 rounded-sm uppercase tracking-[0.08em]',
-    md: 'h-9 px-3.5 text-[12px] gap-2 rounded-sm uppercase tracking-[0.08em]',
-    icon: 'h-8 w-8 p-0 rounded-sm',
+    xs: 'h-7 px-2 text-[11px] gap-1.5',
+    sm: 'h-8 px-2.5 text-[11.5px] gap-1.5',
+    md: 'h-9 px-3.5 text-[12px] gap-2',
+    icon: 'h-8 w-8 p-0',
   };
   return (
     <Tag
       ref={ref}
       type={Tag === 'button' ? type : undefined}
       className={cn(
-        'focus-ring inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap border font-medium transition-colors disabled:pointer-events-none disabled:opacity-45',
+        'btn focus-ring inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap border transition-colors disabled:pointer-events-none disabled:opacity-45',
         variants[variant] || variants.secondary,
         sizes[size] || sizes.md,
         className,
@@ -73,7 +74,7 @@ export function Field({ label, hint, error, children, className, right, info }) 
         </span>
       ) : null}
       {children}
-      {error ? <p className="mt-1.5 text-[12px] text-danger">{error}</p> : hint ? <p className="mt-1.5 text-[12px] text-subtle">{hint}</p> : null}
+      {error ? <p className="mt-1.5 text-[12px] text-danger">{error}</p> : hint ? <p className="mt-1.5 truncate text-[12px] text-subtle" title={typeof hint === 'string' ? hint : undefined}>{hint}</p> : null}
     </label>
   );
 }
@@ -176,13 +177,37 @@ export function CardHeader({ title, subtitle, icon: Icon, action, className }) {
 export function PageHeader({ eyebrow, title, subtitle, actions, className }) {
   return (
     <div className={cn('flex flex-wrap items-end justify-between gap-4', className)}>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         {eyebrow ? <p className="mb-1 text-[12px] font-medium text-muted">{eyebrow}</p> : null}
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">{title}</h1>
-        {subtitle ? <p className="mt-1 max-w-2xl text-[13px] leading-5 text-muted">{subtitle}</p> : null}
+        <h1 className="truncate font-display text-[22px] font-semibold tracking-[-0.02em] text-fg">{title}</h1>
+        {subtitle ? <p className="mt-1 max-w-2xl truncate text-[13px] leading-5 text-muted">{subtitle}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
+  );
+}
+
+export function CopyUri({ value, className, empty = 'URI stored on this device' }) {
+  if (!value) return <span className={cn('block min-w-0 truncate font-mono text-subtle', className)}>{empty}</span>;
+  return (
+    <button
+      type="button"
+      title="Click to copy connection string"
+      className={cn('group flex min-w-0 max-w-full items-center gap-1.5 text-left', className)}
+      onClick={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(value);
+          toast.success('Copied connection string');
+        } catch {
+          toast.error('Could not copy');
+        }
+      }}
+    >
+      <span className="min-w-0 flex-1 truncate font-mono text-subtle group-hover:text-fg">{value}</span>
+      <Copy size={12} className="shrink-0 text-subtle opacity-70 group-hover:opacity-100" />
+    </button>
   );
 }
 
@@ -258,7 +283,7 @@ export function Sheet({ open, title, subtitle, icon, onClose, wide, children, fo
             exit={{ x: 32, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 420, damping: 38 }}
             className={cn(
-              'fixed inset-y-2 right-2 z-50 flex flex-col overflow-hidden rounded-sm border border-dashed border-line-strong bg-surface',
+              'fixed inset-y-2 right-2 z-50 flex flex-col overflow-hidden rounded-lg border border-theme border-line-strong bg-surface shadow-card',
               wide ? 'w-[min(calc(100vw-1rem),46rem)]' : 'w-[min(calc(100vw-1rem),32rem)]',
             )}
           >
@@ -319,7 +344,7 @@ export function Confirm({ open, title, body, confirmLabel = 'Continue', danger, 
             initial={{ scale: 0.97, opacity: 0, y: 6 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.97, opacity: 0 }}
-            className="w-full max-w-md rounded-sm border border-dashed border-line-strong bg-surface p-5"
+            className="w-full max-w-md rounded-lg border border-theme border-line-strong bg-surface p-5 shadow-card"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-[15px] font-semibold">{title}</h3>

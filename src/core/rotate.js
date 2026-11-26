@@ -118,15 +118,23 @@ export function ejsonUser(doc) {
   return EJSON.serialize(doc);
 }
 
-/** Newest-first audit rows, narrowed by text and calendar dates (local dates, inclusive). */
-export function filterRotationAudit(rows, { q = '', from = '', to = '' } = {}) {
+function truthy(v) {
+  return v === true || v === 1 || /^(1|true|yes)$/i.test(String(v || ''));
+}
+
+/** Newest-first audit rows, narrowed by text, dates, connection, and database. */
+export function filterRotationAudit(rows, { q = '', from = '', to = '', database = '', connectionId = '', unique } = {}) {
   const term = String(q || '').trim().toLowerCase();
   const start = from ? new Date(`${from}T00:00:00`).getTime() : null;
   const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
-  return (rows || []).filter((row) => {
+  const db = String(database || '').trim();
+  const conn = String(connectionId || '').trim();
+  const filtered = (rows || []).filter((row) => {
     const at = new Date(row.at).getTime();
     if (start && !(at >= start)) return false;
     if (end && !(at <= end)) return false;
+    if (db && String(row.database || '') !== db) return false;
+    if (conn && row.connectionId && String(row.connectionId) !== conn) return false;
     if (!term) return true;
     const blob = [row.email, row.name, row.username, row.userId, row.database, row.collection, row.connectionName]
       .filter(Boolean)
@@ -134,6 +142,14 @@ export function filterRotationAudit(rows, { q = '', from = '', to = '' } = {}) {
       .toLowerCase();
     return blob.includes(term);
   });
+  if (!truthy(unique)) return filtered;
+  const latest = new Map();
+  for (const row of filtered) {
+    const key = `${row.collection || ''}|${row.userId || row.email || ''}`;
+    const prev = latest.get(key);
+    if (!prev || new Date(row.at) >= new Date(prev.at)) latest.set(key, row);
+  }
+  return [...latest.values()].sort((a, b) => new Date(b.at) - new Date(a.at));
 }
 
 export function formatRotationAudit(rows) {

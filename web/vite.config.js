@@ -8,6 +8,11 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   root: dir,
+  resolve: {
+    alias: {
+      '@': path.join(dir, 'src'),
+    },
+  },
   plugins: [react(), tailwindcss()],
   server: {
     host: '127.0.0.1',
@@ -27,7 +32,7 @@ export default defineConfig({
           react: ['react', 'react-dom', 'react-router-dom'],
           flow: ['@xyflow/react', '@dagrejs/dagre'],
           motion: ['framer-motion'],
-          charts: ['recharts'],
+          charts: ['echarts', 'echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers', 'motion/react'],
         },
       },
     },

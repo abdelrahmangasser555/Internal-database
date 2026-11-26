@@ -61,7 +61,19 @@ export const ENGINES = {
   },
 };
 
+const ANY_ENGINE = {
+  id: 'any',
+  label: 'Any engine',
+  family: 'any',
+  object: 'collection',
+  objects: 'collections',
+  logo: '/brand/mark.svg',
+  color: '#888888',
+  example: '',
+};
+
 export function engineOf(engine) {
+  if (engine === 'any') return ANY_ENGINE;
   return ENGINES[engine] || ENGINES.mongodb;
 }
 
