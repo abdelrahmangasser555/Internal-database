@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { fileURLToPath } from 'node:url';
-import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, publicSettings, listRotationAudit, listWriteAudit } from './core/store.js';
+import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, publicSettings, listRotationAudit, listWriteAudit, listSeeds, getSeed, saveSeed, deleteSeed, patchSeed, listDashboards, getDashboard, saveDashboard, deleteDashboard } from './core/store.js';
 import { listCollections, findDocuments, collectionStats, listIndexes, sampleUsers, closeClient } from './core/mongo.js';
 import { runBackup, getRunning, listRunning, recordExists, decryptRecord, importBackupFile, tempDecryptDir } from './core/backup.js';
 import { resolveConnection, testConnectionUri, healthCheckAll, closeAdapter } from './core/adapters/index.js';
@@ -10,11 +10,15 @@ import { ENGINES } from './core/engines.js';
 import { verifyRecord } from './core/verify.js';
 import { previewRestore, executeRestore } from './core/restore.js';
 import { aiStatus, draftQuery, explainSchema, clearSchemaCache, testAi } from './core/ai.js';
+import { applySeed, fullSeed, publicSeed, simulateSeed } from './core/seeds.js';
+import { listSkills } from './core/seed-skills.js';
+import { exampleSeed, validateSeed } from './core/seed-format.js';
+import { createDashboard, runDashboard } from './core/dashboards.js';
 import { computeNextRun, describeInterval, formatNext } from './core/schedule.js';
-import { pickFolder } from './core/dialogs.js';
+import { pickFile, pickFolder } from './core/dialogs.js';
 import { revealPath, revealRecord } from './core/explorer.js';
 import { autostartStatus, enableAutostart, disableAutostart } from './core/autostart.js';
-import { previewRotation, executeRotation } from './core/rotate.js';
+import { previewRotation, executeRotation, filterRotationAudit, formatRotationAudit } from './core/rotate.js';
 import { sendHtmlEmail, fromAddress } from './core/email.js';
 import { deviceName, ROOT } from './core/paths.js';
 import { getHashConfig } from './core/hash.js';
@@ -37,7 +41,7 @@ function withExists(record) {
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '8mb' }));
   const resolveUiRoot = () => (fs.existsSync(path.join(uiDist, 'index.html')) ? uiDist : uiDir);
   app.use((req, res, next) => express.static(resolveUiRoot())(req, res, next));
 
@@ -234,6 +238,16 @@ export function createApp() {
     }),
   );
 
+  app.get(
+    '/api/connections/:id/permissions',
+    wrap(async (req, res) => {
+      const { conn, adapter } = resolveConnection(req.params.id);
+      const db = req.query.db ? String(req.query.db) : undefined;
+      if (typeof adapter.permissions !== 'function') throw new Error('This engine does not report privileges');
+      res.json(await adapter.permissions(conn, db));
+    }),
+  );
+
   // ---- Assistant (optional, OpenRouter). Drafts only; never executes. ----
   app.get('/api/ai/status', (_req, res) => res.json(aiStatus()));
 
@@ -397,12 +411,30 @@ export function createApp() {
     }),
   );
 
-  app.get('/api/rotate/audit', (_req, res) => res.json(listRotationAudit()));
+  app.get('/api/rotate/audit', (req, res) => {
+    res.json(filterRotationAudit(listRotationAudit(), req.query || {}));
+  });
+
+  app.get('/api/rotate/audit.txt', (req, res) => {
+    const rows = filterRotationAudit(listRotationAudit(), req.query || {});
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="rotation-audit-${stamp}.txt"`);
+    res.send(formatRotationAudit(rows));
+  });
 
   app.post(
     '/api/dialogs/folder',
     wrap(async (_req, res) => {
       const selected = await pickFolder();
+      res.json({ path: selected });
+    }),
+  );
+
+  app.post(
+    '/api/dialogs/file',
+    wrap(async (_req, res) => {
+      const selected = await pickFile();
       res.json({ path: selected });
     }),
   );
@@ -440,6 +472,125 @@ export function createApp() {
       res.json(result);
     }),
   );
+
+  // ---- Import Seeds (explicit write path, like Restore). ----
+  app.get('/api/seeds', (_req, res) => res.json(listSeeds().map(publicSeed)));
+  app.get('/api/seeds/skills', (_req, res) => res.json(listSkills()));
+  app.get('/api/seeds/example', (_req, res) => res.json(exampleSeed()));
+  app.post(
+    '/api/seeds/validate',
+    wrap(async (req, res) => {
+      res.json(validateSeed(req.body?.payload ?? req.body));
+    }),
+  );
+  app.get(
+    '/api/seeds/:id',
+    wrap(async (req, res) => {
+      const row = getSeed(req.params.id);
+      if (!row) throw new Error('Seed not found');
+      res.json(fullSeed(row));
+    }),
+  );
+  app.post(
+    '/api/seeds',
+    wrap(async (req, res) => {
+      const row = saveSeed(req.body || {});
+      res.json(fullSeed(row));
+    }),
+  );
+  app.put(
+    '/api/seeds/:id',
+    wrap(async (req, res) => {
+      const existing = getSeed(req.params.id);
+      if (!existing) throw new Error('Seed not found');
+      const row = saveSeed({ ...req.body, id: req.params.id });
+      res.json(fullSeed(row));
+    }),
+  );
+  app.delete('/api/seeds/:id', (req, res) => {
+    deleteSeed(req.params.id);
+    res.json({ ok: true });
+  });
+  app.post(
+    '/api/seeds/simulate',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      let payload = body.payload;
+      if (!payload && body.seedId) {
+        const row = getSeed(body.seedId);
+        if (!row) throw new Error('Seed not found');
+        payload = row.payload;
+      }
+      const result = await simulateSeed({
+        payload,
+        connectionId: body.connectionId,
+        database: body.database,
+        wipe: Boolean(body.wipe),
+        createMissing: body.createMissing !== false,
+      });
+      if (body.seedId) patchSeed(body.seedId, { lastSimulatedAt: new Date().toISOString() });
+      res.json(result);
+    }),
+  );
+  app.post(
+    '/api/seeds/apply',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      let payload = body.payload;
+      if (!payload && body.seedId) {
+        const row = getSeed(body.seedId);
+        if (!row) throw new Error('Seed not found');
+        payload = row.payload;
+      }
+      const result = await applySeed({
+        payload,
+        connectionId: body.connectionId,
+        database: body.database,
+        wipe: Boolean(body.wipe),
+        createMissing: body.createMissing !== false,
+        confirm: body.confirm,
+      });
+      if (body.seedId) patchSeed(body.seedId, { lastAppliedAt: new Date().toISOString() });
+      res.json(result);
+    }),
+  );
+
+  // ---- AI exploration dashboards (read-only queries). ----
+  app.get('/api/dashboards', (_req, res) => res.json(listDashboards()));
+  app.get(
+    '/api/dashboards/:id',
+    wrap(async (req, res) => {
+      const row = getDashboard(req.params.id);
+      if (!row) throw new Error('Dashboard not found');
+      res.json(row);
+    }),
+  );
+  app.post(
+    '/api/dashboards',
+    wrap(async (req, res) => {
+      const body = req.body || {};
+      if (!body.connectionId || !body.database) throw new Error('Pick a connection and database');
+      res.json(await createDashboard({ connectionId: body.connectionId, database: body.database, prompt: body.prompt }));
+    }),
+  );
+  app.post(
+    '/api/dashboards/:id/run',
+    wrap(async (req, res) => {
+      res.json(await runDashboard(req.params.id));
+    }),
+  );
+  app.put(
+    '/api/dashboards/:id',
+    wrap(async (req, res) => {
+      const existing = getDashboard(req.params.id);
+      if (!existing) throw new Error('Dashboard not found');
+      res.json(saveDashboard({ ...existing, ...req.body, id: req.params.id }));
+    }),
+  );
+  app.delete('/api/dashboards/:id', (req, res) => {
+    deleteDashboard(req.params.id);
+    res.json({ ok: true });
+  });
 
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();

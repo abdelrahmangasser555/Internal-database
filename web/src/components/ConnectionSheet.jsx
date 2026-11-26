@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CircleCheck, CircleX, Lock, PlugZap } from 'lucide-react';
+import { CircleCheck, CircleX, Lock, PlugZap, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { API } from '../api.js';
 import { useApp } from '../state/AppState.jsx';
-import { Button, Confirm, Field, Input, Sheet, Tabs } from './ui.jsx';
+import { Badge, Button, Confirm, Field, Input, Sheet, Tabs } from './ui.jsx';
 import { EngineLogo } from './EngineLogo.jsx';
 import { ENGINES, ENV_TONES, detectEngine, engineOf } from '../lib/engines.js';
 import { cn } from '../lib/cn.js';
 
-const SWATCHES = ['#7C83FF', '#3DDC97', '#5CC8FF', '#F5B942', '#FF6B6B', '#C084FC', '#F472B6', '#94A3B8'];
+const SWATCHES = ['#E8E8E8', '#9D9D9D', '#3794FF', '#3FB950', '#D29922', '#F14C4C', '#C084FC', '#F472B6'];
 
 export function ConnectionSheet() {
   const { sheet, closeSheet, refresh, checkHealth } = useApp();
@@ -24,6 +24,8 @@ export function ConnectionSheet() {
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [permissions, setPermissions] = useState(null);
+  const [permBusy, setPermBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -34,6 +36,15 @@ export function ConnectionSheet() {
     setColor(existing?.color || SWATCHES[0]);
     setTest(null);
     setBusy(false);
+    setPermissions(null);
+    if (existing?.id) {
+      setPermBusy(true);
+      API.connections
+        .permissions(existing.id)
+        .then(setPermissions)
+        .catch((err) => setPermissions({ error: err.message }))
+        .finally(() => setPermBusy(false));
+    }
   }, [open, existing?.id]);
 
   const detected = useMemo(() => detectEngine(uri), [uri]);
@@ -130,12 +141,13 @@ export function ConnectionSheet() {
           </div>
         </div>
 
-        <Field label="Name">
+        <Field label="Name" info="A label on this device only. It is not sent to the database server.">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={`${info.label} production`} autoFocus />
         </Field>
 
         <Field
           label="Connection string"
+          info="URI is encrypted with this device's master key. Explore, backups and analytics never write through it. Restore, Rotate and Seeds are the only write paths."
           right={<span className="inline-flex items-center gap-1 text-[11px] text-subtle"><Lock size={11} /> AES-256-GCM at rest</span>}
           hint={
             existing
@@ -158,7 +170,7 @@ export function ConnectionSheet() {
           />
         </Field>
 
-        <Field label="Environment">
+        <Field label="Environment" info="Cosmetic tag so production connections are harder to mix up with local ones. It does not change server behaviour.">
           <Tabs
             size="sm"
             value={environment}
@@ -181,6 +193,32 @@ export function ConnectionSheet() {
             ))}
           </div>
         </Field>
+
+        {existing ? (
+          <div className="rounded-lg border border-line bg-surface-2/50 p-3.5">
+            <div className="mb-2 flex items-center gap-2 text-[12.5px] font-medium text-fg">
+              <Shield size={14} className="text-primary" />
+              User privileges
+              <span className="font-normal text-subtle">what this login can do</span>
+            </div>
+            {permBusy ? <p className="text-[12px] text-subtle">Reading grants…</p> : null}
+            {permissions?.error ? <p className="text-[12.5px] text-danger">{permissions.error}</p> : null}
+            {permissions && !permissions.error ? (
+              <div className="space-y-2">
+                <p className="font-mono text-[12px] text-muted">{permissions.user || 'unknown user'}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge tone={permissions.canRead ? 'ok' : 'muted'}>read {permissions.canRead ? 'yes' : 'no'}</Badge>
+                  <Badge tone={permissions.canWrite ? 'warn' : 'muted'}>write {permissions.canWrite ? 'yes' : 'no'}</Badge>
+                  <Badge tone={permissions.canCreate ? 'info' : 'muted'}>create {permissions.canCreate ? 'yes' : 'no'}</Badge>
+                  <Badge tone={permissions.canDrop ? 'fail' : 'muted'}>drop {permissions.canDrop ? 'yes' : 'no'}</Badge>
+                  {permissions.canAdmin ? <Badge tone="warn">admin</Badge> : null}
+                </div>
+                {permissions.roles?.length ? <p className="text-[12px] text-muted">Roles: {permissions.roles.join(', ')}</p> : null}
+                {permissions.notes?.length ? <p className="text-[12px] text-subtle">{permissions.notes.join(' ')}</p> : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="rounded-lg border border-line bg-surface-2/50 p-3.5">
           <div className="flex items-center justify-between gap-3">

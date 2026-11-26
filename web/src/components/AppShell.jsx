@@ -12,11 +12,20 @@ import { RecordSheet } from './RecordSheet.jsx';
 import { RestoreSheet } from './RestoreSheet.jsx';
 import { AssistantSheet } from './AssistantSheet.jsx';
 import { cn } from '../lib/cn.js';
-import { NAV } from '../lib/nav.js';
+import { MOBILE_NAV, NAV } from '../lib/nav.js';
 
 export { NAV };
 
-const TITLES = { '': 'Overview', browse: 'Explore', backups: 'Backups', flow: 'Flow', rotate: 'Password rotate', settings: 'Settings' };
+const TITLES = {
+  '': 'Overview',
+  browse: 'Explore',
+  seeds: 'Import seeds',
+  analytics: 'Analytics',
+  backups: 'Backups',
+  flow: 'Flow',
+  rotate: 'Password rotate',
+  settings: 'Settings',
+};
 
 export function AppShell() {
   const { meta, openSheet, jobs, openAssistant } = useApp();
@@ -30,7 +39,7 @@ export function AppShell() {
   return (
     <div className="app-glow flex h-full min-h-screen">
       {/* Desktop side nav */}
-      <aside className="hidden w-[232px] shrink-0 flex-col border-r border-line bg-bg-2/60 px-3 py-4 backdrop-blur md:flex">
+      <aside className="hidden w-[232px] shrink-0 flex-col border-r border-dashed border-line-strong bg-bg-2 px-3 py-4 md:flex">
         <button type="button" onClick={() => navigate('/')} className="focus-ring mb-6 flex items-center gap-2.5 rounded-md px-2 text-left">
           <BrandMark size={30} />
           <span>
@@ -41,7 +50,7 @@ export function AppShell() {
         <button
           type="button"
           onClick={openPalette}
-          className="focus-ring mb-4 flex h-9 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-[12.5px] text-subtle hover:border-line-strong hover:text-muted"
+          className="focus-ring mb-4 flex h-9 items-center gap-2 rounded-sm border border-dashed border-line-strong bg-surface px-2.5 text-[12.5px] text-subtle hover:border-fg hover:text-fg"
         >
           <Search size={14} />
           <span className="flex-1 text-left">Search or jump…</span>
@@ -116,8 +125,8 @@ export function AppShell() {
       </div>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-2 bottom-2 z-30 flex items-center justify-around rounded-xl border border-line bg-surface/90 px-1 py-1 shadow-2xl backdrop-blur md:hidden" style={{ paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom))' }}>
-        {NAV.slice(0, 5).map((item) => {
+      <nav className="fixed inset-x-2 bottom-2 z-30 flex items-center justify-around rounded-sm border border-dashed border-line-strong bg-surface px-1 py-1 md:hidden" style={{ paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom))' }}>
+        {MOBILE_NAV.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink

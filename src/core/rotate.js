@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { EJSON } from 'bson';
 import { getClient } from './mongo.js';
-import { getConnection, getSettings, addRotationAudit } from './store.js';
+import { getConnection, getSettings, addRotationAudit, listRotationAudit } from './store.js';
 import { hashPassword, getHashConfig } from './hash.js';
 import { makePassword, userDisplay } from './pattern.js';
 import { passwordEmailHtml, renderTemplate, sendHtmlEmail } from './email.js';
@@ -70,15 +70,22 @@ export async function executeRotation(input) {
     const password = makePassword({ mode, pattern, user, mapping });
     const hashed = await hashPassword(password, hashConfig);
     await col.updateOne({ _id: user._id }, { $set: { [passwordField]: hashed } });
+    const userId = String(user._id);
+    const previous = listRotationAudit().find(
+      (row) => row.userId === userId && row.database === database && row.collection === collection && row.password,
+    );
     addRotationAudit({
       at: new Date().toISOString(),
       connectionId,
       connectionName: connection?.name,
       database,
       collection,
-      userId: String(user._id),
+      userId,
       email: info.email || null,
       name: info.name || null,
+      username: info.username || null,
+      previousPassword: previous?.password || null,
+      password,
       notified: Boolean(notifyUsers && info.email),
     });
     if (notifyUsers && info.email) {
@@ -109,4 +116,61 @@ export async function executeRotation(input) {
 
 export function ejsonUser(doc) {
   return EJSON.serialize(doc);
+}
+
+/** Newest-first audit rows, narrowed by text and calendar dates (local dates, inclusive). */
+export function filterRotationAudit(rows, { q = '', from = '', to = '' } = {}) {
+  const term = String(q || '').trim().toLowerCase();
+  const start = from ? new Date(`${from}T00:00:00`).getTime() : null;
+  const end = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
+  return (rows || []).filter((row) => {
+    const at = new Date(row.at).getTime();
+    if (start && !(at >= start)) return false;
+    if (end && !(at <= end)) return false;
+    if (!term) return true;
+    const blob = [row.email, row.name, row.username, row.userId, row.database, row.collection, row.connectionName]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return blob.includes(term);
+  });
+}
+
+export function formatRotationAudit(rows) {
+  const lines = [
+    'Backup Service — password rotation audit',
+    `Generated: ${new Date().toISOString()}`,
+    'This file stays on this device. It lists each rotated user, the previous generated password, and the new one.',
+    '',
+    '=== Latest password per user ===',
+  ];
+  const latest = new Map();
+  for (const row of rows || []) {
+    const key = `${row.database}|${row.collection}|${row.userId}`;
+    const prev = latest.get(key);
+    if (!prev || new Date(row.at) >= new Date(prev.at)) latest.set(key, row);
+  }
+  if (!latest.size) lines.push('(no matching rows)');
+  for (const row of latest.values()) {
+    lines.push(
+      `${row.name || row.username || row.email || row.userId}  <${row.email || 'no email'}>  final: ${row.password || '(not recorded)'}`,
+    );
+  }
+  lines.push('', '=== History ===');
+  for (const row of rows || []) {
+    lines.push('---');
+    lines.push(`When: ${row.at || ''}`);
+    lines.push(`Name: ${row.name || ''}`);
+    lines.push(`Username: ${row.username || ''}`);
+    lines.push(`Email: ${row.email || ''}`);
+    lines.push(`User id: ${row.userId || ''}`);
+    lines.push(`Connection: ${row.connectionName || ''}`);
+    lines.push(`Database: ${row.database || ''}.${row.collection || ''}`);
+    lines.push(`Previous password: ${row.previousPassword || '(not recorded)'}`);
+    lines.push(`New password: ${row.password || '(not recorded)'}`);
+    lines.push(`Notified: ${row.notified ? 'yes' : 'no'}`);
+  }
+  if (!(rows || []).length) lines.push('(no matching rows)');
+  lines.push('');
+  return lines.join('\n');
 }

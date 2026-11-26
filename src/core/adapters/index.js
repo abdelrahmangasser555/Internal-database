@@ -11,8 +11,9 @@ import { getConnection, listConnections } from '../store.js';
 //   test(uri) listDatabases(conn) listObjects(conn, db) describe(conn, db, name)
 //   rows(conn, db, name, opts) query(conn, db, text, opts) graph(conn, db)
 //   dump(conn, db, opts, dir) restoreCheck(conn, db, names) restore(conn, db, opts) close(id)
-// Read paths are read-only by construction. dump() is read-only. restore() is the
-// only write here and is reached through the explicit Restore flow.
+//   permissions(conn, db) seedEnsure() seedWipe() seedInsert() lookupKeys()
+// Read paths are read-only by construction. dump() is read-only. restore() and
+// seed*() are the explicit write paths (Restore sheet and Import Seeds).
 
 const ADAPTERS = { mongodb: mongo, postgres, mysql, mariadb: mysql, sqlite, mssql };
 

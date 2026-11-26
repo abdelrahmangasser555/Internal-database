@@ -227,14 +227,20 @@ export function JobSheet() {
         </Section>
 
         <Section title="Destination">
-          <Field label="Backup folder" hint="Files are written as .zip (or .zip.enc) with a .sha256 checksum next to them.">
+          <Field
+            label="Backup folder"
+            hint="Files are written as .zip (or .zip.enc) with a .sha256 checksum next to them."
+            info="Snapshots stay on this device. The job never writes back to the source database."
+          >
             <div className="flex gap-2">
               <Input value={form.targetPath || ''} onChange={set('targetPath')} placeholder="C:\Backups\databases" className="font-mono text-[12px]" />
               <Button
                 onClick={async () => {
+                  toast.message('Folder window opening — look behind this browser if it does not come forward');
                   try {
                     const { path } = await API.folder();
                     if (path) setForm((prev) => ({ ...prev, targetPath: path }));
+                    else toast.message('No folder selected');
                   } catch (err) {
                     toast.error(err.message);
                   }
@@ -302,7 +308,11 @@ export function JobSheet() {
 
         <Section title="Retention & checks">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Keep the last" hint="0 keeps every file. Older files from this job are deleted; history rows stay.">
+            <Field
+              label="Keep the last"
+              hint="0 keeps every file. Older files from this job are deleted; history rows stay."
+              info="Retention only deletes archive files on disk. It does not drop tables or collections on the server."
+            >
               <div className="flex items-center gap-2">
                 <Input type="number" min="0" value={form.keepLast} onChange={set('keepLast')} className="w-24" />
                 <span className="text-[12px] text-muted">backups</span>

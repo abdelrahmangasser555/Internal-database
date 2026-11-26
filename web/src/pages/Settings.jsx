@@ -91,7 +91,11 @@ export function SettingsPage() {
               Using <code className="font-mono">OPENROUTER_API_KEY</code> from .env. Remove it there to manage the key here instead.
             </p>
           ) : (
-            <Field label="OpenRouter API key" hint="Stored encrypted with this device's master key and never sent back to the browser.">
+            <Field
+              label="OpenRouter API key"
+              hint="Stored encrypted with this device's master key and never sent back to the browser."
+              info="Used for the assistant, schema tours, and Analytics dashboards. Row data is not sent; only table/column names and your prompt."
+            >
               <div className="flex gap-2">
                 <Input type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={ai.hasKey ? '•••••••• saved' : 'sk-or-…'} autoComplete="off" />
                 <Button
@@ -155,7 +159,11 @@ export function SettingsPage() {
       <Card>
         <CardHeader title="Password rotation" icon={ShieldCheck} subtitle="Hashing used by the Rotate module (MongoDB only)." />
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="Bcrypt rounds" hint="Same as Bahri-MOC-PCR by default (10).">
+          <Field
+            label="Bcrypt rounds"
+            hint="Same as Bahri-MOC-PCR by default (10)."
+            info="Higher is slower and harder to brute-force. Rotate writes password hashes only — it never stores the new password."
+          >
             <Input
               type="number"
               min="8"

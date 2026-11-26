@@ -16,6 +16,8 @@ export const RECORDS_FILE = path.join(DATA_DIR, 'records.json');
 export const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 export const ROTATION_AUDIT_FILE = path.join(DATA_DIR, 'rotation-audit.json');
 export const WRITE_AUDIT_FILE = path.join(DATA_DIR, 'write-audit.json');
+export const SEEDS_FILE = path.join(DATA_DIR, 'seeds.json');
+export const DASHBOARDS_FILE = path.join(DATA_DIR, 'dashboards.json');
 export const LOCK_FILE = path.join(DATA_DIR, 'scheduler.lock');
 
 export function ensureDataDirs() {

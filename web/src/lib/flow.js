@@ -5,22 +5,22 @@ import { bytes, verificationTone } from './format.js';
 // Connections without jobs get a source node plus a ghost "add job" node.
 
 const COL = { source: 0, snapshot: 300, storage: 600, retention: 900 };
-const ROW = 170;
+const ROW = 240;
 
-function edge(id, source, target, { live = true, warn = false } = {}) {
+function edge(id, source, target, { live = true, warn = false, dashed = false } = {}) {
   const stroke = warn ? 'var(--warn)' : live ? 'var(--primary)' : 'var(--line-strong)';
   return {
     id,
     source,
     target,
     type: 'smoothstep',
-    className: live ? 'edge-flow' : undefined,
-    style: { stroke, strokeWidth: 1.6, opacity: live ? 0.85 : 0.6 },
+    className: live && !dashed ? 'edge-flow' : undefined,
+    style: { stroke, strokeWidth: 1.4, opacity: live ? 0.9 : 0.55, strokeDasharray: dashed ? '4 4' : undefined },
     markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 14, height: 14 },
   };
 }
 
-export function buildPipeline({ connections, jobs, records, filterConnection }) {
+export function buildPipeline({ connections, jobs, records, dashboards = [], seeds = [], filterConnection }) {
   const nodes = [];
   const edges = [];
   let row = 0;
@@ -63,7 +63,30 @@ export function buildPipeline({ connections, jobs, records, filterConnection }) 
       edges.push(edge(`e-st-${job.id}`, `snap-${job.id}`, `store-${job.id}`, { live, warn: failed }));
       edges.push(edge(`e-r-${job.id}`, `store-${job.id}`, `ret-${job.id}`, { live: live && Boolean(job.retention?.keepLast || job.retention?.maxAgeDays) }));
     });
-    row += span;
+
+    const dashboardsFor = dashboards.filter((d) => d.connectionId === conn.id);
+    const bindings = [];
+    for (const seed of seeds) {
+      for (const binding of seed.bindings || []) {
+        if (binding.connectionId === conn.id) bindings.push({ seed, binding });
+      }
+    }
+    const extras = [
+      ...dashboardsFor.map((dashboard) => ({ kind: 'dashboard', dashboard })),
+      ...bindings.map((item) => ({ kind: 'seedlink', ...item })),
+    ];
+    extras.forEach((item, i) => {
+      const y = (row + span + i) * ROW;
+      if (item.kind === 'dashboard') {
+        nodes.push({ id: `dash-${item.dashboard.id}`, type: 'dashboard', position: { x: COL.snapshot, y }, data: { dashboard: item.dashboard, conn } });
+        edges.push(edge(`e-dash-${item.dashboard.id}`, `src-${conn.id}`, `dash-${item.dashboard.id}`, { dashed: true }));
+      } else {
+        const id = `seed-${item.seed.id}-${item.binding.database}`;
+        nodes.push({ id, type: 'seedlink', position: { x: COL.snapshot, y }, data: { seed: item.seed, binding: item.binding, conn } });
+        edges.push(edge(`e-${id}`, `src-${conn.id}`, id, { dashed: true }));
+      }
+    });
+    row += span + extras.length;
   }
   return { nodes, edges };
 }

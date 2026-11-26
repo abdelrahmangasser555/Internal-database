@@ -135,7 +135,7 @@ export function CommandPalette() {
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 8, opacity: 0 }}
             transition={{ duration: 0.14 }}
-            className="mx-auto w-full max-w-xl overflow-hidden rounded-xl border border-line-strong bg-surface shadow-2xl"
+            className="mx-auto w-full max-w-xl overflow-hidden rounded-sm border border-dashed border-line-strong bg-surface"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2.5 border-b border-line px-4">

@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LoaderCircle, X } from 'lucide-react';
+import { Info, LoaderCircle, X } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 
 export const Button = forwardRef(function Button(
@@ -8,18 +8,17 @@ export const Button = forwardRef(function Button(
   ref,
 ) {
   const variants = {
-    primary: 'bg-primary text-primary-fg border-transparent hover:bg-primary-strong shadow-[0_1px_0_rgb(255_255_255/0.15)_inset]',
-    secondary: 'bg-surface-2 text-fg border-line hover:bg-surface-3 hover:border-line-strong',
-    ghost: 'bg-transparent text-muted border-transparent hover:bg-surface-2 hover:text-fg',
-    danger: 'bg-danger/10 text-danger border-danger/25 hover:bg-danger/18',
-    // legacy aliases used by older call sites
-    quiet: 'bg-transparent text-muted border-transparent hover:bg-surface-2 hover:text-fg',
+    primary: 'bg-primary text-primary-fg border-primary hover:bg-primary-strong',
+    secondary: 'bg-transparent text-fg border-dashed border-line-strong hover:border-fg hover:bg-surface-2',
+    ghost: 'bg-transparent text-muted border-dashed border-transparent hover:border-line-strong hover:text-fg',
+    danger: 'bg-transparent text-danger border-dashed border-danger/50 hover:bg-danger/10',
+    quiet: 'bg-transparent text-muted border-dashed border-transparent hover:border-line-strong hover:text-fg',
   };
   const sizes = {
-    xs: 'h-7 px-2 text-[12px] gap-1.5 rounded-sm',
-    sm: 'h-8 px-2.5 text-[12.5px] gap-1.5 rounded-md',
-    md: 'h-9 px-3.5 text-[13px] gap-2 rounded-md',
-    icon: 'h-8 w-8 p-0 rounded-md',
+    xs: 'h-7 px-2 text-[11px] gap-1.5 rounded-sm uppercase tracking-[0.08em]',
+    sm: 'h-8 px-2.5 text-[11.5px] gap-1.5 rounded-sm uppercase tracking-[0.08em]',
+    md: 'h-9 px-3.5 text-[12px] gap-2 rounded-sm uppercase tracking-[0.08em]',
+    icon: 'h-8 w-8 p-0 rounded-sm',
   };
   return (
     <Tag
@@ -40,12 +39,36 @@ export const Button = forwardRef(function Button(
   );
 });
 
-export function Field({ label, hint, error, children, className, right }) {
+export function InfoTip({ text, label = 'More information' }) {
+  if (!text) return null;
+  return (
+    <span className="relative inline-flex align-middle">
+      <button
+        type="button"
+        aria-label={label}
+        className="peer focus-ring inline-flex h-4 w-4 items-center justify-center rounded-full text-subtle hover:text-fg"
+      >
+        <Info size={13} />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-50 hidden w-64 -translate-x-1/2 rounded-md border border-line bg-surface-2 px-2.5 py-2 text-left text-[12px] font-normal leading-4 text-fg shadow-lg peer-hover:block peer-focus:block"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+export function Field({ label, hint, error, children, className, right, info }) {
   return (
     <label className={cn('block', className)}>
       {label ? (
         <span className="mb-1.5 flex items-center justify-between text-[12px] font-medium text-muted">
-          {label}
+          <span className="inline-flex items-center gap-1.5">
+            {label}
+            {info ? <InfoTip text={info} /> : null}
+          </span>
           {right}
         </span>
       ) : null}
@@ -235,7 +258,7 @@ export function Sheet({ open, title, subtitle, icon, onClose, wide, children, fo
             exit={{ x: 32, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 420, damping: 38 }}
             className={cn(
-              'fixed inset-y-2 right-2 z-50 flex flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl',
+              'fixed inset-y-2 right-2 z-50 flex flex-col overflow-hidden rounded-sm border border-dashed border-line-strong bg-surface',
               wide ? 'w-[min(calc(100vw-1rem),46rem)]' : 'w-[min(calc(100vw-1rem),32rem)]',
             )}
           >
@@ -296,7 +319,7 @@ export function Confirm({ open, title, body, confirmLabel = 'Continue', danger, 
             initial={{ scale: 0.97, opacity: 0, y: 6 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.97, opacity: 0 }}
-            className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-2xl"
+            className="w-full max-w-md rounded-sm border border-dashed border-line-strong bg-surface p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-[15px] font-semibold">{title}</h3>

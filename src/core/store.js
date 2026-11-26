@@ -4,12 +4,15 @@ import { decryptSecret, encryptSecret, newId } from './crypto.js';
 import { detectEngine, maskUri as maskConnectionUri } from './engines.js';
 import {
   CONNECTIONS_FILE,
+  DASHBOARDS_FILE,
   JOBS_FILE,
   RECORDS_FILE,
   ROTATION_AUDIT_FILE,
+  SEEDS_FILE,
   SETTINGS_FILE,
   WRITE_AUDIT_FILE,
 } from './paths.js';
+import { parseSeed, summarizeSeed } from './seed-format.js';
 
 function readJson(file, fallback) {
   try {
@@ -64,7 +67,7 @@ export function saveConnection(input) {
     rows.push(row);
   }
   row.name = String(input.name || 'Untitled').trim();
-  row.color = input.color || row.color || '#6366F1';
+  row.color = input.color || row.color || '#E8E8E8';
   row.environment = ['production', 'staging', 'development', 'local'].includes(input.environment)
     ? input.environment
     : row.environment || 'production';
@@ -255,4 +258,103 @@ export function addWriteAudit(entry) {
 
 export function listWriteAudit() {
   return readJson(WRITE_AUDIT_FILE, []);
+}
+
+export function listSeeds() {
+  return readJson(SEEDS_FILE, []);
+}
+
+export function getSeed(id) {
+  return listSeeds().find((row) => row.id === id) || null;
+}
+
+function normalizeSeedBindings(input) {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of input) {
+    const connectionId = String(item?.connectionId || '').trim();
+    const database = String(item?.database || '').trim();
+    if (!connectionId || !database) continue;
+    const key = `${connectionId}\0${database}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ connectionId, database });
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+
+export function saveSeed(input) {
+  const parsed = parseSeed(input.payload || input);
+  const summary = summarizeSeed(parsed);
+  const rows = listSeeds();
+  const now = new Date().toISOString();
+  let row = input.id ? rows.find((item) => item.id === input.id) : null;
+  if (!row) {
+    row = { id: input.id || newId(), createdAt: now };
+    rows.unshift(row);
+  }
+  row.name = String(input.name || parsed.name || 'Untitled seed').trim();
+  row.description = String(input.description || parsed.description || '').trim();
+  row.engine = parsed.engine;
+  row.notes = String(input.notes || parsed.notes || '').trim();
+  row.bindings = input.bindings !== undefined ? normalizeSeedBindings(input.bindings) : row.bindings || [];
+  row.payload = parsed;
+  row.objectCount = summary.objectCount;
+  row.recordCount = summary.recordCount;
+  row.updatedAt = now;
+  writeJson(SEEDS_FILE, rows);
+  return row;
+}
+
+export function patchSeed(id, patch) {
+  const rows = listSeeds();
+  const row = rows.find((item) => item.id === id);
+  if (!row) return null;
+  Object.assign(row, patch, { updatedAt: new Date().toISOString() });
+  writeJson(SEEDS_FILE, rows);
+  return row;
+}
+
+export function deleteSeed(id) {
+  writeJson(
+    SEEDS_FILE,
+    listSeeds().filter((item) => item.id !== id),
+  );
+}
+
+export function listDashboards() {
+  return readJson(DASHBOARDS_FILE, []);
+}
+
+export function getDashboard(id) {
+  return listDashboards().find((row) => row.id === id) || null;
+}
+
+export function saveDashboard(input) {
+  const rows = listDashboards();
+  const now = new Date().toISOString();
+  let row = input.id ? rows.find((item) => item.id === input.id) : null;
+  if (!row) {
+    row = { id: input.id || newId(), createdAt: now };
+    rows.unshift(row);
+  }
+  row.name = String(input.name || 'Untitled dashboard').trim().slice(0, 120);
+  row.prompt = String(input.prompt || row.prompt || '').trim();
+  row.connectionId = input.connectionId || row.connectionId;
+  row.database = input.database || row.database;
+  row.summary = String(input.summary || row.summary || '').trim();
+  row.widgets = Array.isArray(input.widgets) ? input.widgets : row.widgets || [];
+  row.updatedAt = now;
+  if (input.lastRunAt) row.lastRunAt = input.lastRunAt;
+  writeJson(DASHBOARDS_FILE, rows);
+  return row;
+}
+
+export function deleteDashboard(id) {
+  writeJson(
+    DASHBOARDS_FILE,
+    listDashboards().filter((item) => item.id !== id),
+  );
 }

@@ -11,6 +11,7 @@ import {
   restoreValue,
   topoSortTables,
 } from './sqlsafe.js';
+import { coerceSqlValue, createTableSql, emptyPermission, recordColumns } from './seedwrite.js';
 
 const pools = new Map();
 const SYSTEM_SCHEMAS = "('pg_catalog','information_schema','pg_toast')";
@@ -531,4 +532,121 @@ export async function close(connectionId) {
       await p.end().catch(() => {});
     }
   }
+}
+
+export async function permissions(conn, db) {
+  try {
+    return await readOnly(conn, db, async (c) => {
+      const { rows: [u] } = await c.query(
+        `SELECT current_user AS user_name, session_user AS session,
+                current_database() AS database,
+                r.rolsuper, r.rolcreatedb, r.rolcreaterole
+           FROM pg_roles r WHERE r.rolname = current_user`,
+      );
+      const { rows: grants } = await c.query(
+        `SELECT privilege_type, COUNT(*)::int AS n
+           FROM information_schema.role_table_grants
+          WHERE grantee = current_user
+          GROUP BY privilege_type
+          ORDER BY privilege_type`,
+      );
+      const { rows: [dbp] } = await c.query(
+        `SELECT has_database_privilege(current_user, current_database(), 'CREATE') AS can_create,
+                has_database_privilege(current_user, current_database(), 'CONNECT') AS can_connect`,
+      );
+      const privs = grants.map((g) => `${g.privilege_type} (${g.n} tables)`);
+      const canWrite = Boolean(u.rolsuper) || grants.some((g) => ['INSERT', 'UPDATE', 'DELETE'].includes(g.privilege_type));
+      return {
+        user: u.user_name,
+        roles: [u.rolsuper ? 'superuser' : null, u.rolcreatedb ? 'createdb' : null, u.rolcreaterole ? 'createrole' : null].filter(Boolean),
+        canRead: true,
+        canWrite,
+        canCreate: Boolean(dbp?.can_create || u.rolsuper),
+        canDrop: Boolean(u.rolsuper) || grants.some((g) => g.privilege_type === 'TRUNCATE'),
+        canAdmin: Boolean(u.rolsuper),
+        privileges: privs,
+        details: [{ resource: u.database, actions: ['CONNECT', dbp?.can_create ? 'CREATE' : null].filter(Boolean) }],
+        notes: u.rolsuper ? ['This role is a PostgreSQL superuser.'] : [],
+      };
+    });
+  } catch (err) {
+    return emptyPermission({ notes: [err.message] });
+  }
+}
+
+export async function seedEnsure(conn, db, object) {
+  const client = await writeClient(conn, db);
+  try {
+    const { schema } = splitName(object.name);
+    if (schema && schema !== 'public') await client.query(`CREATE SCHEMA IF NOT EXISTS ${q(schema)}`);
+    await client.query(createTableSql(object, 'postgres', q, qName(object.name)));
+    return { name: object.name, created: true };
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+export async function seedWipe(conn, db, names) {
+  const client = await writeClient(conn, db);
+  const out = [];
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL session_replication_role = replica');
+    for (const name of names) {
+      const n = await client.query(`DELETE FROM ${qName(name)}`);
+      out.push({ name, deleted: n.rowCount || 0 });
+    }
+    await client.query('COMMIT');
+    return out;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+export async function seedInsert(conn, db, name, records) {
+  if (!records?.length) return { name, inserted: 0 };
+  const cols = recordColumns(records);
+  const client = await writeClient(conn, db);
+  const colSql = cols.map(q).join(', ');
+  const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
+  const insertSql = (overriding) =>
+    `INSERT INTO ${qName(name)} (${colSql})${overriding ? ' OVERRIDING SYSTEM VALUE' : ''} VALUES (${ph})`;
+  try {
+    await client.query('BEGIN');
+    let overriding = false;
+    let inserted = 0;
+    for (const rec of records) {
+      const values = cols.map((c) => coerceSqlValue(rec[c], { json: true, engine: 'postgres' }));
+      try {
+        await client.query(insertSql(overriding), values);
+      } catch (err) {
+        if (!overriding && /identity|overriding/i.test(err.message)) {
+          overriding = true;
+          await client.query(insertSql(true), values);
+        } else {
+          throw err;
+        }
+      }
+      inserted += 1;
+    }
+    await client.query('COMMIT');
+    return { name, inserted };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+export async function lookupKeys(conn, db, name, field, values) {
+  const list = [...new Set((values || []).filter((v) => v != null && v !== ''))].slice(0, 200);
+  if (!list.length) return [];
+  return readOnly(conn, db, async (c) => {
+    const { rows } = await c.query(`SELECT ${q(field)} AS k FROM ${qName(name)} WHERE ${q(field)} = ANY($1) LIMIT 200`, [list.map(String)]);
+    return rows.map((r) => String(r.k));
+  });
 }
