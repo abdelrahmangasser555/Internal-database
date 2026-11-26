@@ -5,6 +5,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
+const API = process.env.BACKUP_API_URL || 'http://127.0.0.1:4780';
+
+function attachApiProxy(proxy) {
+  let lastLog = 0;
+  proxy.on('error', (_err, _req, res) => {
+    const now = Date.now();
+    if (now - lastLog > 2500) {
+      console.warn('[vite] API not reachable yet (restarting?) — returning 503 to the browser');
+      lastLog = now;
+    }
+    if (res && !res.headersSent) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'API unavailable — retry shortly.' }));
+    }
+  });
+}
 
 export default defineConfig({
   root: dir,
@@ -19,7 +35,11 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:4780', changeOrigin: true },
+      '/api': {
+        target: API,
+        changeOrigin: true,
+        configure: attachApiProxy,
+      },
     },
   },
   build: {

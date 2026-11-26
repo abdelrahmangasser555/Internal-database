@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -141,4 +142,31 @@ export function spawnNode(args, { env } = {}) {
     env: { ...process.env, ...env },
     windowsHide: true,
   });
+}
+
+/** Poll until something accepts TCP connections (API listen ready). */
+export function waitForPort(port, { host = '127.0.0.1', timeoutMs = 120_000, intervalMs = 200 } = {}) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      const socket = net.connect({ port, host }, () => {
+        socket.end();
+        resolve();
+      });
+      socket.setTimeout(1500, () => socket.destroy());
+      socket.on('error', () => {
+        socket.destroy();
+        if (Date.now() - started > timeoutMs) {
+          reject(new Error(`Timed out after ${Math.round(timeoutMs / 1000)}s waiting for ${host}:${port}`));
+          return;
+        }
+        setTimeout(attempt, intervalMs);
+      });
+    };
+    attempt();
+  });
+}
+
+export function apiDevPort() {
+  return Number(process.env.APP_PORT || 4780);
 }

@@ -1,12 +1,34 @@
+const DEV = import.meta.env.DEV;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function api(path, options = {}) {
-  const res = await fetch(path, {
+  const init = {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
     body: options.body ? JSON.stringify(options.body) : options.rawBody,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
-  return data;
+  };
+  const max = DEV ? 5 : 1;
+  let lastErr;
+  for (let attempt = 0; attempt < max; attempt++) {
+    try {
+      const res = await fetch(path, init);
+      const data = await res.json().catch(() => ({}));
+      if (DEV && res.status === 503 && attempt < max - 1) {
+        await sleep(200 + attempt * 200);
+        continue;
+      }
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    } catch (err) {
+      lastErr = err;
+      if (!DEV || attempt >= max - 1) throw err;
+      await sleep(200 + attempt * 200);
+    }
+  }
+  throw lastErr;
 }
 
 export const API = {

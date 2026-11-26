@@ -19,7 +19,7 @@ if (lock.ok) {
 const { url } = await startServer();
 logLine(`Dashboard ${url}`);
 
-if (!autostartStatus().enabled) {
+if (process.env.BACKUP_DEV !== '1' && !autostartStatus().enabled) {
   try {
     enableAutostart();
     logLine('Autostart enabled for this device');
