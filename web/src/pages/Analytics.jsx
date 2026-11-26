@@ -9,12 +9,13 @@ import { WidgetChart } from '../components/charts/WidgetChart.jsx';
 import { engineOf } from '../lib/engines.js';
 import { formatWhen } from '../lib/format.js';
 import { cn } from '../lib/cn.js';
+import { analyticsPath, rememberConnection } from '../lib/paths.js';
 
 export function AnalyticsPage() {
-  const { dashboardId } = useParams();
+  const { dashboardId, connectionId: routeConnectionId } = useParams();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const presetConnection = params.get('connectionId') || '';
+  const presetConnection = routeConnectionId || params.get('connectionId') || '';
   const presetDatabase = params.get('database') || '';
   const { connections, meta } = useApp();
   const [list, setList] = useState([]);
@@ -27,13 +28,19 @@ export function AnalyticsPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (routeConnectionId) {
+      rememberConnection(routeConnectionId);
+      setConnectionId(routeConnectionId);
+      return;
+    }
     if (!connectionId && connections[0]?.id) setConnectionId(connections[0].id);
-  }, [connections, connectionId]);
+  }, [connections, connectionId, routeConnectionId]);
 
   const loadList = async () => {
     const rows = await API.dashboards.list();
-    setList(rows);
-    return rows;
+    const scoped = routeConnectionId ? rows.filter((d) => d.connectionId === routeConnectionId) : rows;
+    setList(scoped);
+    return scoped;
   };
 
   const openDash = async (id) => {
@@ -42,7 +49,7 @@ export function AnalyticsPage() {
       const ran = await API.dashboards.run(id);
       setActive(ran);
       setCreating(false);
-      navigate(`/analytics/${id}`, { replace: true });
+      navigate(routeConnectionId ? analyticsPath(routeConnectionId, id) : `/analytics/${id}`, { replace: true });
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -88,7 +95,7 @@ export function AnalyticsPage() {
       await loadList();
       setActive(dash);
       setCreating(false);
-      navigate(`/analytics/${dash.id}`);
+      navigate(routeConnectionId ? analyticsPath(routeConnectionId, dash.id) : `/analytics/${dash.id}`);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -128,7 +135,7 @@ export function AnalyticsPage() {
           />
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <Field label="Connection">
-              <Select value={connectionId} onChange={(e) => setConnectionId(e.target.value)}>
+              <Select value={connectionId} disabled={Boolean(routeConnectionId)} onChange={(e) => setConnectionId(e.target.value)}>
                 {connections.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} · {engineOf(c.engine).label}
@@ -202,7 +209,7 @@ export function AnalyticsPage() {
               if (rows[0]) openDash(rows[0].id);
               else {
                 setCreating(true);
-                navigate('/analytics');
+                navigate(routeConnectionId ? analyticsPath(routeConnectionId) : '/analytics');
               }
             }}
           />

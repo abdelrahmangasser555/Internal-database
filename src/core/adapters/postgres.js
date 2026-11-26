@@ -642,6 +642,72 @@ export async function seedInsert(conn, db, name, records) {
   }
 }
 
+export async function insight(conn, db) {
+  const target = db || defaultDb(conn.uri);
+  return readOnly(conn, target, async (c) => {
+    const info = await c.query(
+      `SELECT version() AS version,
+              current_database() AS db,
+              current_user AS user_name,
+              inet_server_addr()::text AS host,
+              inet_server_port() AS port,
+              pg_postmaster_start_time() AS started,
+              current_setting('max_connections') AS max_connections,
+              current_setting('server_version') AS server_version`,
+    );
+    const size = await c.query('SELECT pg_database_size(current_database()) AS size').catch(() => ({ rows: [{ size: 0 }] }));
+    const backends = await c
+      .query(
+        `SELECT count(*)::int AS current,
+                count(*) FILTER (WHERE state = 'active')::int AS active
+           FROM pg_stat_activity
+          WHERE datname = current_database()`,
+      )
+      .catch(() => ({ rows: [{ current: null, active: null }] }));
+    const dbs = await c
+      .query(
+        `SELECT datname AS name, pg_database_size(datname) AS size
+           FROM pg_database
+          WHERE NOT datistemplate AND has_database_privilege(datname, 'CONNECT')
+          ORDER BY datname`,
+      )
+      .catch(() => ({ rows: [] }));
+    let objects = [];
+    try {
+      objects = (await listObjects(conn, target)).slice(0, 40);
+    } catch {
+      objects = [];
+    }
+    const row = info.rows[0] || {};
+    const version = (/PostgreSQL ([\d.]+)/.exec(row.version) || [])[1] || row.server_version || row.version;
+    return {
+      version,
+      process: 'postgres',
+      topology: 'standalone',
+      host: row.host || null,
+      instanceType: `PostgreSQL ${version || ''}`.trim(),
+      os: { type: row.version || null, name: 'PostgreSQL', version: version || null },
+      uptimeSec: row.started ? Math.round((Date.now() - new Date(row.started).getTime()) / 1000) : null,
+      connections: {
+        current: backends.rows[0]?.current ?? null,
+        available:
+          row.max_connections != null && backends.rows[0]?.current != null
+            ? Math.max(0, Number(row.max_connections) - Number(backends.rows[0].current))
+            : null,
+        max: row.max_connections != null ? Number(row.max_connections) : null,
+        active: backends.rows[0]?.active ?? null,
+        totalCreated: null,
+      },
+      databases: dbs.rows.map((d) => ({ name: d.name, sizeOnDisk: Number(d.size) || 0 })),
+      database: target,
+      objects,
+      dataSize: Number(size.rows[0]?.size) || 0,
+      provider: null,
+      notes: [],
+    };
+  });
+}
+
 export async function lookupKeys(conn, db, name, field, values) {
   const list = [...new Set((values || []).filter((v) => v != null && v !== ''))].slice(0, 200);
   if (!list.length) return [];

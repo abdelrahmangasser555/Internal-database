@@ -425,6 +425,99 @@ export async function seedInsert(conn, db, name, records) {
   }
 }
 
+function hostFromUri(uri) {
+  try {
+    const u = new URL(String(uri).replace(/^mongodb(\+srv)?:/i, 'https:'));
+    return u.hostname || '';
+  } catch {
+    return '';
+  }
+}
+
+export async function insight(conn, db) {
+  const client = await getClient(conn.id);
+  const admin = client.db('admin');
+  const cmd = (spec) => admin.command(spec).catch(() => ({}));
+  const [hello, build, host, status, listed] = await Promise.all([
+    cmd({ hello: 1 }),
+    cmd({ buildInfo: 1 }),
+    cmd({ hostInfo: 1 }),
+    cmd({ serverStatus: 1 }),
+    client
+      .db()
+      .admin()
+      .listDatabases()
+      .catch(() => ({ databases: [] })),
+  ]);
+  const hostname = hello.me || status.host || hostFromUri(conn.uri);
+  const atlas = /\.mongodb\.net$/i.test(hostname) || /mongodb\.net/i.test(hostFromUri(conn.uri));
+  const tags = hello.tags || {};
+  const topology = hello.msg === 'isdbgrid' || /shard/i.test(hostname) ? 'sharded' : hello.setName ? 'replicaSet' : 'standalone';
+  const databases = (listed.databases || [])
+    .filter((d) => d.name !== 'local')
+    .map((d) => ({ name: d.name, sizeOnDisk: d.sizeOnDisk || 0, empty: Boolean(d.empty) }));
+  const target = db || databases.find((d) => !['admin', 'config'].includes(d.name))?.name || databases[0]?.name || '';
+  let objects = [];
+  if (target) {
+    try {
+      objects = (await listObjects(conn, target)).slice(0, 40);
+    } catch {
+      objects = [];
+    }
+  }
+  const members = (hello.hosts || (hostname ? [hostname] : [])).map((h) => ({
+    host: h,
+    me: h === hello.me,
+    regionCode: h === hello.me ? tags.region || tags.availabilityZone || '' : '',
+    provider: h === hello.me ? tags.provider || (atlas ? 'Atlas' : '') : '',
+    nodeType: h === hello.me ? tags.nodeType || '' : '',
+  }));
+  const connections = status.connections || {};
+  const opcounters = status.opcounters || {};
+  const os = host.os || {};
+  const extra = host.extra || {};
+  return {
+    version: build.version || status.version || hello.maxWireVersion || null,
+    process: status.process || (topology === 'sharded' ? 'mongos' : 'mongod'),
+    topology,
+    replicaSet: hello.setName || status.repl?.setName || null,
+    host: hostname,
+    atlas,
+    clusterName: atlas ? hostname.split('.')[0] : hostname.split('.')[0] || null,
+    instanceType: tags.nodeType ? `Atlas ${String(tags.nodeType).toLowerCase().replace(/_/g, ' ')}` : atlas ? 'MongoDB Atlas' : topology,
+    storageEngine: status.storageEngine?.name || null,
+    os: { type: os.type || extra.kernelVersion || null, name: os.name || null, version: os.version || extra.osName || null },
+    cpu: extra.cpuModelName || extra.cpuFrequencyMHz ? { model: extra.cpuModelName || null, mhz: extra.cpuFrequencyMHz || null, cores: extra.numCores || host.system?.numCores || null } : null,
+    uptimeSec: status.uptime || null,
+    connections: {
+      current: connections.current ?? null,
+      available: connections.available ?? null,
+      max:
+        connections.current != null && connections.available != null
+          ? Number(connections.current) + Number(connections.available)
+          : null,
+      active: connections.active ?? null,
+      totalCreated: connections.totalCreated ?? null,
+    },
+    ops: {
+      query: opcounters.query ?? null,
+      insert: opcounters.insert ?? null,
+      update: opcounters.update ?? null,
+      delete: opcounters.delete ?? null,
+      getmore: opcounters.getmore ?? null,
+      command: opcounters.command ?? null,
+    },
+    regionCode: tags.region || tags.availabilityZone || null,
+    provider: tags.provider || (atlas ? 'MongoDB Atlas' : extra.cpuArch ? extra.cpuArch : null),
+    databases,
+    database: target,
+    objects,
+    dataSize: databases.reduce((s, d) => s + (d.sizeOnDisk || 0), 0),
+    members,
+    notes: [],
+  };
+}
+
 export async function lookupKeys(conn, db, name, field, values) {
   const list = [...new Set((values || []).map(mongoKey).filter((v) => v != null))].slice(0, 200);
   if (!list.length) return [];

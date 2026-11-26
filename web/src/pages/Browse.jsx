@@ -28,6 +28,7 @@ import { QueryPanel } from '../components/explore/QueryPanel.jsx';
 import { bytes, compact } from '../lib/format.js';
 import { engineOf, shortName } from '../lib/engines.js';
 import { cn } from '../lib/cn.js';
+import { explorePath, rememberConnection, rotatePath } from '../lib/paths.js';
 
 const SYSTEM_DBS = ['admin', 'config', 'local'];
 
@@ -77,8 +78,13 @@ export function BrowsePage() {
     loadObjects(connectionId, db);
   }, [connectionId, db]);
 
-  const go = (...parts) => navigate(`/browse/${parts.filter(Boolean).map(encodeURIComponent).join('/')}`);
+  const go = (id, database, objectName) => navigate(explorePath(id, database, objectName));
   const term = search.trim().toLowerCase();
+  const tree = conn ? [conn] : connections;
+
+  useEffect(() => {
+    if (connectionId) rememberConnection(connectionId);
+  }, [connectionId]);
 
   return (
     <div className="flex h-full min-h-0">
@@ -89,12 +95,12 @@ export function BrowsePage() {
             <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter tables…" className="h-8 pl-8 text-[12.5px]" />
           </div>
-          <Button size="icon" variant="ghost" onClick={() => openSheet({ type: 'connection' })} title="New connection">
+          <Button size="icon" variant="ghost" onClick={() => openSheet({ type: 'connection', connection: conn })} title="Edit connection">
             <Plus size={15} />
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-2">
-          {connections.map((c) => {
+          {tree.map((c) => {
             const open = expanded[c.id];
             const list = dbs[c.id];
             const h = health[c.id];
@@ -178,7 +184,7 @@ export function BrowsePage() {
               </div>
             );
           })}
-          {!connections.length ? <p className="p-3 text-[12.5px] text-subtle">No connections yet.</p> : null}
+          {!tree.length ? <p className="p-3 text-[12.5px] text-subtle">No connection selected.</p> : null}
         </div>
       </aside>
 
@@ -214,13 +220,13 @@ function Crumbs({ conn, db, object, actions }) {
         <EngineLogo engine={conn.engine} size={18} tile />
         <div className="min-w-0">
           <div className="flex items-center gap-1 text-[12px] text-muted">
-            <button type="button" className="hover:text-fg" onClick={() => navigate(`/browse/${conn.id}`)}>
+            <button type="button" className="hover:text-fg" onClick={() => navigate(explorePath(conn.id))}>
               {conn.name}
             </button>
             {db ? (
               <>
                 <ChevronRight size={12} />
-                <button type="button" className="hover:text-fg" onClick={() => navigate(`/browse/${conn.id}/${encodeURIComponent(db)}`)}>
+                <button type="button" className="hover:text-fg" onClick={() => navigate(explorePath(conn.id, db))}>
                   {db}
                 </button>
               </>
@@ -245,7 +251,7 @@ function ConnectionPicker() {
         {connections.map((c) => {
           const h = health[c.id];
           return (
-            <button key={c.id} type="button" onClick={() => navigate(`/browse/${c.id}`)} className="card flex items-center gap-3 p-4 text-left transition hover:border-line-strong">
+            <button key={c.id} type="button" onClick={() => navigate(explorePath(c.id))} className="card flex items-center gap-3 p-4 text-left transition hover:border-line-strong">
               <EngineLogo engine={c.engine} size={20} tile />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13.5px] font-semibold">{c.name}</div>
@@ -411,7 +417,7 @@ function DatabaseView({ conn, db, objects, onOpen, onRefresh, initialTab, initia
         ) : tab === 'diagram' ? (
           <ErDiagram connectionId={conn.id} db={db} engine={conn.engine} onOpen={onOpen} />
         ) : (
-          <QueryPanel connectionId={conn.id} db={db} engine={conn.engine} object={list[0]?.name} initial={initialQuery} />
+          <QueryPanel connectionId={conn.id} db={db} engine={conn.engine} object={list[0]?.name} objects={list} initial={initialQuery} />
         )}
       </div>
     </>
@@ -496,7 +502,7 @@ function ObjectView({ conn, db, object, engine, onOpen, initialTab }) {
               <Sparkles size={13} className="text-primary" /> Ask
             </Button>
             {isMongo ? (
-              <Button size="sm" variant="ghost" onClick={() => navigate('/rotate', { state: { connectionId: conn.id, db, col: object } })}>
+              <Button size="sm" variant="ghost" onClick={() => navigate(rotatePath(conn.id), { state: { connectionId: conn.id, db, col: object } })}>
                 <KeyRound size={13} /> Rotate
               </Button>
             ) : null}

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CircleCheck, CircleX, Lock, PlugZap, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { API } from '../api.js';
 import { useApp } from '../state/AppState.jsx';
+import { connectionPath, rememberConnection } from '../lib/paths.js';
 import { Badge, Button, Confirm, Field, Input, Sheet, Tabs } from './ui.jsx';
 import { EngineLogo } from './EngineLogo.jsx';
 import { ENGINES, ENV_TONES, detectEngine, engineOf } from '../lib/engines.js';
@@ -12,6 +14,7 @@ const SWATCHES = ['#E8E8E8', '#9D9D9D', '#3794FF', '#3FB950', '#D29922', '#F14C4
 
 export function ConnectionSheet() {
   const { sheet, closeSheet, refresh, checkHealth } = useApp();
+  const navigate = useNavigate();
   const open = sheet?.type === 'connection';
   const existing = open ? sheet.connection : null;
 
@@ -106,6 +109,8 @@ export function ConnectionSheet() {
                   }
                   await refresh();
                   checkHealth();
+                  rememberConnection(saved.id);
+                  if (!existing) navigate(connectionPath(saved.id));
                   closeSheet();
                 } catch (err) {
                   toast.error(err.message);

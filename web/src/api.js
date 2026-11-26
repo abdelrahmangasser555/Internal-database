@@ -56,6 +56,8 @@ export const API = {
       ),
     permissions: (id, db) =>
       api(`/api/connections/${id}/permissions${db ? `?db=${encodeURIComponent(db)}` : ''}`),
+    insight: (id, db) =>
+      api(`/api/connections/${id}/insight${db ? `?db=${encodeURIComponent(db)}` : ''}`),
   },
   seeds: {
     list: () => api('/api/seeds'),

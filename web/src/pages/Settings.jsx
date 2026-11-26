@@ -66,7 +66,7 @@ export function SettingsPage() {
       <PageHeader title="Settings" subtitle="Device-local options. Secrets stay in .env and the encrypted data folder on this machine." />
 
       <Card>
-        <CardHeader title="Appearance" icon={Palette} subtitle="Pick a palette. Graphite is brighter than the old grey. Your choice is remembered on this device." />
+        <CardHeader title="Appearance" icon={Palette} subtitle="Each brand has its own type, radius, stroke and buttons — not just colour. Saved on this device." />
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {THEME_CHOICES.map((item) => {
             const active = item.id === pref;
@@ -76,11 +76,11 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => setPref(item.id)}
                 className={cn(
-                  'border border-dashed p-2.5 text-left',
+                  'border border-theme p-2.5 text-left',
                   active ? 'border-fg bg-surface-2' : 'border-line-strong hover:border-fg',
                 )}
               >
-                <span className="flex h-8 overflow-hidden border border-dashed border-line-strong">
+                <span className="flex h-8 overflow-hidden border border-theme border-line-strong">
                   <span className="flex-1" style={{ background: item.swatch.bg }} />
                   <span className="flex-1" style={{ background: item.swatch.surface }} />
                   <span className="w-2" style={{ background: item.swatch.fg }} />

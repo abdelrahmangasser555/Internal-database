@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { fileURLToPath } from 'node:url';
 import { listConnections, saveConnection, deleteConnection, getConnection, listJobs, saveJob, deleteJob, patchJob, getJob, listRecords, getRecord, deleteRecord, getSettings, saveSettings, publicSettings, listRotationAudit, listWriteAudit, listSeeds, getSeed, saveSeed, deleteSeed, patchSeed, listDashboards, getDashboard, saveDashboard, deleteDashboard } from './core/store.js';
+import { connectionInsight } from './core/insight.js';
 import { listCollections, findDocuments, collectionStats, listIndexes, sampleUsers, closeClient } from './core/mongo.js';
 import { runBackup, getRunning, listRunning, recordExists, decryptRecord, importBackupFile, tempDecryptDir } from './core/backup.js';
 import { resolveConnection, testConnectionUri, healthCheckAll, closeAdapter } from './core/adapters/index.js';
@@ -23,7 +23,6 @@ import { sendHtmlEmail, fromAddress } from './core/email.js';
 import { deviceName, ROOT } from './core/paths.js';
 import { getHashConfig } from './core/hash.js';
 
-const uiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
 const uiDist = path.join(ROOT, 'web', 'dist');
 
 function wrap(fn) {
@@ -42,8 +41,7 @@ export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '8mb' }));
-  const resolveUiRoot = () => (fs.existsSync(path.join(uiDist, 'index.html')) ? uiDist : uiDir);
-  app.use((req, res, next) => express.static(resolveUiRoot())(req, res, next));
+  app.use((req, res, next) => express.static(uiDist)(req, res, next));
 
   app.get('/api/meta', (_req, res) => {
     res.json({
@@ -172,7 +170,7 @@ export function createApp() {
       res.json(
         await sampleUsers(req.params.id, req.params.db, req.params.col, {
           skip: Number(req.query.skip || 0),
-          limit: Number(req.query.limit || 100),
+          limit: Number(req.query.limit || 200),
           search: String(req.query.search || ''),
         }),
       );
@@ -245,6 +243,13 @@ export function createApp() {
       const db = req.query.db ? String(req.query.db) : undefined;
       if (typeof adapter.permissions !== 'function') throw new Error('This engine does not report privileges');
       res.json(await adapter.permissions(conn, db));
+    }),
+  );
+
+  app.get(
+    '/api/connections/:id/insight',
+    wrap(async (req, res) => {
+      res.json(await connectionInsight(req.params.id, req.query.db ? String(req.query.db) : undefined));
     }),
   );
 
@@ -595,13 +600,13 @@ export function createApp() {
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     if (req.path.startsWith('/api')) return next();
-    const indexFile = path.join(resolveUiRoot(), 'index.html');
+    const indexFile = path.join(uiDist, 'index.html');
     if (!fs.existsSync(indexFile)) {
       res
         .status(503)
         .type('html')
         .send(
-          '<p>UI is not built. Run <code>npm run build:ui</code> or <code>npm run dev</code>.</p>',
+          '<p>The dashboard is not built. Run <code>npm start</code> or <code>pnpm start</code> (builds the React UI), or <code>npm run dev</code> for hot reload on port 5173.</p>',
         );
       return;
     }

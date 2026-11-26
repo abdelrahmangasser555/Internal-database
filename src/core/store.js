@@ -5,6 +5,7 @@ import { detectEngine, maskUri as maskConnectionUri } from './engines.js';
 import {
   CONNECTIONS_FILE,
   DASHBOARDS_FILE,
+  INSIGHT_FILE,
   JOBS_FILE,
   RECORDS_FILE,
   ROTATION_AUDIT_FILE,
@@ -357,4 +358,26 @@ export function deleteDashboard(id) {
     DASHBOARDS_FILE,
     listDashboards().filter((item) => item.id !== id),
   );
+}
+
+const INSIGHT_KEEP = 48;
+
+export function recordInsightSample(connectionId, sample) {
+  if (!connectionId) return [];
+  const all = readJson(INSIGHT_FILE, {});
+  const list = Array.isArray(all[connectionId]) ? all[connectionId] : [];
+  list.push({
+    at: new Date().toISOString(),
+    connectionsCurrent: sample.connectionsCurrent ?? null,
+    totalCreated: sample.totalCreated ?? null,
+    databases: sample.databases ?? null,
+  });
+  all[connectionId] = list.slice(-INSIGHT_KEEP);
+  writeJson(INSIGHT_FILE, all);
+  return all[connectionId];
+}
+
+export function insightHistory(connectionId) {
+  const all = readJson(INSIGHT_FILE, {});
+  return Array.isArray(all[connectionId]) ? all[connectionId] : [];
 }

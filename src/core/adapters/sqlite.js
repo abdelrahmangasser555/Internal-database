@@ -463,6 +463,31 @@ export async function seedInsert(conn, _db, name, records) {
   }
 }
 
+export async function insight(conn) {
+  const file = sqlitePath(conn.uri);
+  const db = await open(conn);
+  const version = db.prepare('SELECT sqlite_version() AS v').get()?.v;
+  const page = db.prepare('PRAGMA page_count').get();
+  const pageSize = db.prepare('PRAGMA page_size').get();
+  const journal = db.prepare('PRAGMA journal_mode').get();
+  const objects = await listObjects(conn).catch(() => []);
+  const size = fs.existsSync(file) ? fs.statSync(file).size : Number(page?.page_count || 0) * Number(pageSize?.page_size || 0);
+  return {
+    version,
+    process: 'sqlite',
+    topology: 'file',
+    host: path.basename(file),
+    instanceType: `SQLite ${version || ''}`.trim(),
+    os: { type: 'file', name: path.basename(file), version },
+    connections: { current: 1, available: 0, max: 1, active: 1, totalCreated: null },
+    databases: [{ name: 'main', sizeOnDisk: size }],
+    database: 'main',
+    objects: (objects || []).slice(0, 40),
+    dataSize: size,
+    notes: journal?.journal_mode ? [`journal ${journal.journal_mode}`] : [],
+  };
+}
+
 export async function lookupKeys(conn, _db, name, field, values) {
   const list = [...new Set((values || []).filter((v) => v != null && v !== ''))].slice(0, 200);
   if (!list.length) return [];

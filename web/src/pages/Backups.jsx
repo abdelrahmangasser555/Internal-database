@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { CalendarClock, FileInput, FolderArchive, Lock, Pause, Play, Plus, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { API } from '../api.js';
@@ -7,9 +8,18 @@ import { Badge, Button, Card, Confirm, Empty, Input, PageHeader, Select, StatusD
 import { EngineLogo } from '../components/EngineLogo.jsx';
 import { compact, formatWhen, relativeTime, verificationTone } from '../lib/format.js';
 import { ENGINES } from '../lib/engines.js';
+import { rememberConnection } from '../lib/paths.js';
 
 export function BackupsPage() {
-  const { jobs, records, openSheet, refresh, connections } = useApp();
+  const { connectionId } = useParams();
+  const { jobs: allJobs, records: allRecords, openSheet, refresh, connections } = useApp();
+  const jobs = connectionId ? allJobs.filter((j) => j.connectionId === connectionId) : allJobs;
+  const records = connectionId ? allRecords.filter((r) => r.connectionId === connectionId) : allRecords;
+  const conn = connections.find((c) => c.id === connectionId);
+
+  useEffect(() => {
+    if (connectionId) rememberConnection(connectionId);
+  }, [connectionId]);
   const [runningId, setRunningId] = useState(null);
   const [importPath, setImportPath] = useState('');
   const [q, setQ] = useState('');
@@ -36,9 +46,13 @@ export function BackupsPage() {
     <div className="mx-auto max-w-[1200px] space-y-6 px-5 py-6 md:px-8">
       <PageHeader
         title="Backups"
-        subtitle="Scheduled read-only snapshots with checksums, optional AES-256 encryption, retention and one-click verification."
+        subtitle={
+          conn
+            ? `Scheduled read-only snapshots of ${conn.name}. Checksums, optional AES-256 encryption, retention and one-click verification.`
+            : 'Scheduled read-only snapshots with checksums, optional AES-256 encryption, retention and one-click verification.'
+        }
         actions={
-          <Button variant="primary" onClick={() => openSheet({ type: 'job', job: {} })}>
+          <Button variant="primary" onClick={() => openSheet({ type: 'job', job: { connectionId: connectionId || undefined }, lockConnection: Boolean(connectionId) })}>
             <Plus size={15} /> New backup job
           </Button>
         }
@@ -51,7 +65,7 @@ export function BackupsPage() {
             title="No backup jobs yet"
             body="A job snapshots one database on a schedule into a folder you choose."
             action={
-              <Button variant="primary" onClick={() => openSheet({ type: 'job', job: {} })}>
+              <Button variant="primary" onClick={() => openSheet({ type: 'job', job: { connectionId: connectionId || undefined }, lockConnection: Boolean(connectionId) })}>
                 Create job
               </Button>
             }

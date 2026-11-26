@@ -1,7 +1,7 @@
 import { Handle, Position } from '@xyflow/react';
 import { Archive, BarChart3, CalendarClock, HardDrive, Lock, ShieldCheck, Sprout, Trash2 } from 'lucide-react';
 import { EngineLogo } from '../EngineLogo.jsx';
-import { Badge, StatusDot } from '../ui.jsx';
+import { Badge, CopyUri, StatusDot } from '../ui.jsx';
 import { engineOf } from '../../lib/engines.js';
 import { relativeTime } from '../../lib/format.js';
 import { cn } from '../../lib/cn.js';
@@ -9,7 +9,7 @@ import { cn } from '../../lib/cn.js';
 function Frame({ children, selected, accent, className, step }) {
   return (
     <div
-      className={cn('w-[250px] rounded-sm border border-dashed bg-surface p-3.5 transition', className)}
+      className={cn('w-[250px] rounded-md border border-theme bg-surface p-3.5 shadow-card transition', className)}
       style={{ borderColor: selected ? accent || 'var(--primary)' : 'var(--line)', boxShadow: selected ? `0 0 0 3px color-mix(in oklab, ${accent || 'var(--primary)'} 22%, transparent)` : undefined }}
     >
       {step ? <div className="mb-2 text-[10.5px] font-medium uppercase tracking-[0.08em] text-subtle">{step}</div> : null}
@@ -41,14 +41,14 @@ export function SourceNode({ data, selected }) {
           </div>
         </div>
       </div>
-      <div className="mt-2.5 truncate font-mono text-[10.5px] text-subtle">{conn.uriMasked}</div>
+      <CopyUri value={conn.uriMasked} className="mt-2.5 w-full text-[10.5px]" />
       <div className="mt-2 flex items-center gap-1.5">
         <span className="h-1.5 w-6" style={{ background: conn.color }} />
         <span className="text-[11px] text-muted">
           {jobs} job{jobs === 1 ? '' : 's'}
         </span>
       </div>
-      <div className="mt-2.5 grid grid-cols-3 gap-1 border-t border-dashed border-line pt-2">
+      <div className="mt-2.5 grid grid-cols-3 gap-1 border-t border-theme border-line pt-2">
         <Action icon={Archive} label="Backup" onClick={() => data.onAddJob?.(conn)} />
         <Action icon={BarChart3} label="Chart" onClick={() => data.onAddDashboard?.(conn)} />
         <Action icon={Sprout} label="Seed" onClick={() => data.onPinSeed?.(conn)} />
@@ -146,7 +146,7 @@ export function RetentionNode({ data, selected }) {
 
 export function GhostNode({ data }) {
   return (
-    <div className="w-[220px] cursor-pointer rounded-sm border border-dashed border-line-strong bg-transparent p-3.5 text-center text-[12.5px] text-muted hover:border-primary hover:text-primary">
+    <div className="w-[220px] cursor-pointer rounded-md border border-theme border-line-strong bg-transparent p-3.5 text-center text-[12.5px] text-muted hover:border-primary hover:text-primary">
       <Handle type="target" position={Position.Left} />
       <Archive size={16} className="mx-auto mb-1" />
       Add a backup job for {data.conn.name}
@@ -193,7 +193,7 @@ function Action({ icon: Icon, label, onClick }) {
         event.stopPropagation();
         onClick?.();
       }}
-      className="flex flex-col items-center gap-0.5 border border-dashed border-line px-1 py-1 text-[10px] uppercase tracking-[0.06em] text-muted hover:border-fg hover:text-fg"
+      className="btn flex flex-col items-center gap-0.5 border border-line px-1 py-1 text-[10px] text-muted hover:border-fg hover:text-fg"
     >
       <Icon size={13} />
       {label}

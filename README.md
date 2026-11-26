@@ -5,13 +5,14 @@ Local database backup scheduler, explorer and restore tool for **MongoDB, Postgr
 ## Run
 
 ```bash
-npm install
 npm start
 ```
 
+or `pnpm start`. That command (and `npm run dev` / `pnpm dev`) is enough on a new machine: it pulls the latest commit from the git remote this branch tracks (when the working tree is clean), installs dependencies with whichever of npm/pnpm/yarn you used, builds the React dashboard, and starts it. Windows and Ubuntu use the same scripts (`start.bat` / `start.sh` call the same launcher).
+
 Dashboard: `http://127.0.0.1:4780`
 
-`npm start` rebuilds the dashboard automatically when `web/dist` is missing or older than `web/src`.
+Set `BACKUP_SKIP_PULL=1` if you do not want a git pull (local edits are never overwritten — pull is skipped automatically when the tree is dirty).
 
 During UI development (hot reload):
 
@@ -19,7 +20,7 @@ During UI development (hot reload):
 npm run dev
 ```
 
-Vite serves the dashboard at `http://127.0.0.1:5173` and proxies `/api` to the Express app on `4780`.
+Vite serves the dashboard at `http://127.0.0.1:5173` and proxies `/api` to the Express app on `4780`. Only the React app in `web/` is served.
 
 Headless worker only (for boot):
 
@@ -80,12 +81,14 @@ The connection must use a user that can create tables and insert rows. Your read
 
 ## Explore
 
-- A tree of connections → databases → tables/collections with row counts and search.
+The dashboard is **connection-first**. The home page lists connections. Open one to explore, schedule backups, run analytics, apply seeds, view its pipeline, or rotate MongoDB passwords.
+
+- A tree of databases → tables/collections with row counts and search, scoped to the open connection.
 - **Data**: paginated grid with sorting and a column filter (SQL) or a JSON filter (MongoDB); click a row for the full JSON.
 - **Structure**: columns/fields with types, keys, defaults, indexes and foreign keys.
 - **Query**: read-only editor with `Ctrl + Enter`, history and a row cap.
 - **Diagram**: an ER diagram drawn with React Flow; MongoDB relations are inferred from `…Id` fields.
-- **Flow** page: each job drawn as Source → Snapshot → Storage → Retention.
+- **Flow** tab: each job on that connection drawn as Source → Snapshot → Storage → Retention.
 - `Ctrl + K` opens the command palette, `Ctrl + J` the assistant.
 
 ## Assistant (optional)
@@ -129,8 +132,7 @@ The dashboard follows a small brand kit in `web/src/index.css`: CSS-variable tok
 
 ```bash
 chmod +x start.sh
-npm install
-npm start
+./start.sh
 npm run install:service
 loginctl enable-linger "$USER"
 ```

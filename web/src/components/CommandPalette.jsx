@@ -17,12 +17,13 @@ import { toast } from 'sonner';
 import { API } from '../api.js';
 import { useApp } from '../state/AppState.jsx';
 import { useTheme } from '../state/Theme.jsx';
-import { NAV } from '../lib/nav.js';
+import { GLOBAL_NAV } from '../lib/nav.js';
 import { EngineLogo } from './EngineLogo.jsx';
 import { Kbd } from './ui.jsx';
 import { cn } from '../lib/cn.js';
 import { engineOf } from '../lib/engines.js';
 import { THEME_CHOICES } from '../lib/themes.js';
+import { backupsPath, connectionPath, explorePath, rotatePath } from '../lib/paths.js';
 
 const EVENT = 'bs:open-palette';
 export function openPalette() {
@@ -68,7 +69,7 @@ export function CommandPalette() {
 
   const items = useMemo(() => {
     const all = [
-      ...NAV.map((n) => ({ id: `nav-${n.to}`, group: 'Go to', label: n.label, icon: n.icon, run: () => navigate(n.to) })),
+      ...GLOBAL_NAV.map((n) => ({ id: `nav-${n.to}`, group: 'Go to', label: n.label, icon: n.icon, run: () => navigate(n.to) })),
       { id: 'new-conn', group: 'Actions', label: 'New connection', icon: Plus, run: () => openSheet({ type: 'connection' }) },
       { id: 'new-job', group: 'Actions', label: 'New backup job', icon: FolderArchive, run: () => openSheet({ type: 'job', job: {} }) },
       { id: 'ask', group: 'Actions', label: 'Ask the assistant', hint: 'Ctrl J', icon: Sparkles, run: () => openAssistant({}) },
@@ -91,14 +92,44 @@ export function CommandPalette() {
         run: () => setPref(item.id),
       })),
       { id: 'rotate', group: 'Actions', label: 'Rotate passwords (MongoDB)', icon: KeyRound, run: () => navigate('/rotate') },
-      ...connections.map((c) => ({
-        id: `c-${c.id}`,
-        group: 'Connections',
-        label: c.name,
-        hint: engineOf(c.engine).label,
-        logo: c.engine,
-        run: () => navigate(`/browse/${c.id}`),
-      })),
+      ...connections.flatMap((c) => [
+        {
+          id: `c-${c.id}`,
+          group: 'Connections',
+          label: c.name,
+          hint: engineOf(c.engine).label,
+          logo: c.engine,
+          run: () => navigate(connectionPath(c.id)),
+        },
+        {
+          id: `c-explore-${c.id}`,
+          group: 'Connections',
+          label: `Explore ${c.name}`,
+          hint: engineOf(c.engine).label,
+          logo: c.engine,
+          run: () => navigate(explorePath(c.id)),
+        },
+        {
+          id: `c-backups-${c.id}`,
+          group: 'Connections',
+          label: `Backups · ${c.name}`,
+          hint: engineOf(c.engine).label,
+          icon: FolderArchive,
+          run: () => navigate(backupsPath(c.id)),
+        },
+        ...((c.engine || 'mongodb') === 'mongodb'
+          ? [
+              {
+                id: `c-rotate-${c.id}`,
+                group: 'Connections',
+                label: `Rotate · ${c.name}`,
+                hint: 'MongoDB',
+                icon: KeyRound,
+                run: () => navigate(rotatePath(c.id)),
+              },
+            ]
+          : []),
+      ]),
       ...jobs.flatMap((j) => [
         {
           id: `run-${j.id}`,
@@ -143,7 +174,7 @@ export function CommandPalette() {
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 8, opacity: 0 }}
             transition={{ duration: 0.14 }}
-            className="mx-auto w-full max-w-xl overflow-hidden rounded-sm border border-dashed border-line-strong bg-surface"
+            className="mx-auto w-full max-w-xl overflow-hidden rounded-lg border border-theme border-line-strong bg-surface shadow-card"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2.5 border-b border-line px-4">

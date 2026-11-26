@@ -1,15 +1,11 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { viteBin, ROOT } from './workspace.js';
 
-// Cross-platform dashboard build (Windows + Linux) using Vite.
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// Relative config so Windows `shell: true` does not split on spaces in the project path.
-const config = path.join('web', 'vite.config.js');
-const extra = process.argv.includes('--watch') ? ['--watch'] : [];
-const result = spawnSync('npx', ['vite', 'build', '--config', config, ...extra], {
-  cwd: root,
+// Cross-platform dashboard build (Windows + Linux) using the local Vite binary.
+// Relative config so paths with spaces (common on Windows) stay one argument.
+const result = spawnSync(process.execPath, [viteBin(), 'build', '--config', path.join('web', 'vite.config.js')], {
+  cwd: ROOT,
   stdio: 'inherit',
-  shell: process.platform === 'win32',
 });
 process.exit(result.status ?? 1);

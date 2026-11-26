@@ -525,6 +525,62 @@ export async function seedInsert(conn, db, name, records) {
   }
 }
 
+export async function insight(conn, db) {
+  const target = db || parseConfig(conn.uri).database || 'master';
+  return readOnly(conn, target, async (req) => {
+    const info = await req().query(`
+      SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(64)) AS version,
+             CAST(SERVERPROPERTY('Edition') AS nvarchar(128)) AS edition,
+             CAST(SERVERPROPERTY('MachineName') AS nvarchar(128)) AS host,
+             DB_NAME() AS db,
+             (SELECT cpu_count FROM sys.dm_os_sys_info) AS cpu_count,
+             (SELECT sqlserver_start_time FROM sys.dm_os_sys_info) AS started
+    `);
+    const conns = await req()
+      .query('SELECT COUNT(*) AS n FROM sys.dm_exec_connections')
+      .catch(() => ({ recordset: [{ n: null }] }));
+    const dbs = await req()
+      .query(
+        `SELECT d.name, SUM(CAST(f.size AS bigint)) * 8192 AS size FROM sys.databases d
+           LEFT JOIN sys.master_files f ON f.database_id = d.database_id
+          WHERE HAS_DBACCESS(d.name) = 1 GROUP BY d.name ORDER BY d.name`,
+      )
+      .catch(() => ({ recordset: [] }));
+    let objects = [];
+    try {
+      objects = (await listObjects(conn, target)).slice(0, 40);
+    } catch {
+      objects = [];
+    }
+    const row = info.recordset[0] || {};
+    const databases = (dbs.recordset || [])
+      .filter((x) => !SYSTEM_DBS.has(x.name))
+      .map((x) => ({ name: x.name, sizeOnDisk: Number(x.size) || 0 }));
+    return {
+      version: row.version || null,
+      process: 'sqlserver',
+      topology: 'standalone',
+      host: row.host || null,
+      instanceType: row.edition || 'SQL Server',
+      os: { type: 'SQL Server', name: row.edition || null, version: row.version || null },
+      cpu: row.cpu_count ? { cores: row.cpu_count } : null,
+      uptimeSec: row.started ? Math.round((Date.now() - new Date(row.started).getTime()) / 1000) : null,
+      connections: {
+        current: conns.recordset?.[0]?.n ?? null,
+        available: null,
+        max: null,
+        active: conns.recordset?.[0]?.n ?? null,
+        totalCreated: null,
+      },
+      databases,
+      database: target,
+      objects,
+      dataSize: databases.reduce((s, d) => s + (d.sizeOnDisk || 0), 0),
+      notes: [],
+    };
+  });
+}
+
 export async function lookupKeys(conn, db, name, field, values) {
   const list = [...new Set((values || []).filter((v) => v != null && v !== ''))].slice(0, 200);
   if (!list.length) return [];

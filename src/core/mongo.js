@@ -120,9 +120,11 @@ export async function listIndexes(connectionId, dbName, colName) {
   return client.db(dbName).collection(colName).indexes();
 }
 
-export async function sampleUsers(connectionId, dbName, colName, { skip = 0, limit = 100, search = '' } = {}) {
+export async function sampleUsers(connectionId, dbName, colName, { skip = 0, limit = 200, search = '' } = {}) {
   const client = await getClient(connectionId);
   const col = client.db(dbName).collection(colName);
+  const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 200);
+  const safeSkip = Math.max(Number(skip) || 0, 0);
   const query = search
     ? {
         $or: [
@@ -133,11 +135,13 @@ export async function sampleUsers(connectionId, dbName, colName, { skip = 0, lim
       }
     : {};
   const [docs, total] = await Promise.all([
-    col.find(query).project({ password: 0 }).skip(skip).limit(limit).toArray(),
+    col.find(query).project({ password: 0 }).skip(safeSkip).limit(safeLimit).toArray(),
     col.countDocuments(query),
   ]);
   return {
     documents: docs.map((doc) => EJSON.serialize(doc)),
+    skip: safeSkip,
+    limit: safeLimit,
     total,
   };
 }

@@ -33,7 +33,7 @@ export function ThemeMenu() {
         <Palette size={15} />
       </Button>
       {open ? (
-        <div className="absolute right-0 top-10 z-40 w-64 border border-dashed border-line-strong bg-surface p-1.5">
+        <div className="absolute right-0 top-10 z-40 w-64 border border-theme border-line-strong bg-surface p-1.5 shadow-card">
           <div className="px-2 py-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-subtle">Theme</div>
           {THEME_CHOICES.map((item) => {
             const active = item.id === pref;
@@ -50,7 +50,7 @@ export function ThemeMenu() {
                   active ? 'text-fg' : 'text-muted',
                 )}
               >
-                <span className="flex h-7 w-10 shrink-0 overflow-hidden border border-dashed border-line-strong">
+                <span className="flex h-7 w-10 shrink-0 overflow-hidden border border-theme border-line-strong">
                   <span className="flex-1" style={{ background: item.swatch.bg }} />
                   <span className="flex-1" style={{ background: item.swatch.surface }} />
                   <span className="w-1.5" style={{ background: item.swatch.fg }} />

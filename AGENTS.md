@@ -10,16 +10,16 @@ Guidance for AI coding agents working in **backup-service** (local backup schedu
 | Server | Express 5, localhost dashboard on `APP_PORT` (default **4780**) |
 | Data | JSON files under `data/` (gitignored); device-local only |
 | Platforms | Windows and Ubuntu (autostart / service scripts) |
-| Brand | Flat greys, no background gradients. Themes: Graphite, Ink, Slate, Paper, Sand, plus System (`data-theme` in `web/src/index.css`, picker in the header and Settings). UI face is Segoe UI; data is JetBrains Mono. |
+| Brand | Flat greys, no background gradients. Themes are full kits (type, radius, stroke, shadow, buttons), not colour-only: Graphite (Segoe UI, 2px, dashed), Ink (IBM Plex, sharp), Slate (Inter, 8px, lifted), Paper (Source Serif + Source Sans), Sand (Figtree, pill). Tokens live in `web/src/index.css`; picker in the header and Settings. |
 
 User-facing docs: `README.md`.
 
 ## Commands
 
 ```bash
-npm install          # dependencies
-npm start            # builds UI if needed, then dashboard + scheduler
-npm run dev          # Express API (4780) + Vite UI (5173) with HMR
+npm start            # pull (if clean git), install, build React UI, serve on 4780
+npm run dev          # same bootstrap, then API (4780) + Vite (5173) with HMR
+pnpm start / pnpm dev
 npm run build:ui     # production dashboard into web/dist (Vite; cross-platform)
 npm test             # node:test suites in test/
 npm run worker       # headless scheduler only (src/worker.js)
@@ -27,7 +27,7 @@ npm run install:service
 npm run uninstall:service
 ```
 
-Windows: `start.bat` runs `node src\index.js`.
+`scripts/launch.js` is the Windows/Linux entry for `start` and `dev`. It fast-forwards the tracked git remote when the working tree is clean, runs `npm`/`pnpm` install, and starts the app. Set `BACKUP_SKIP_PULL=1` to skip git. Windows: `start.bat`. Ubuntu: `start.sh`.
 
 Do not commit `node_modules/`, `data/`, or `.env`.
 
@@ -37,7 +37,7 @@ Do not commit `node_modules/`, `data/`, or `.env`.
 src/
   index.js          # entry: env, dirs, lock, scheduler, server, autostart, open browser
   worker.js         # scheduler only; exits if lock held
-  server.js         # Express app + /api/* routes; static UI from web/dist (SPA)
+  server.js         # Express app + /api/* routes; static UI from web/dist only (SPA)
   core/
     store.js        # JSON persistence (connections, jobs, records, settings, audits, seeds, dashboards)
     engines.js      # engine registry, URI detection, URI masking
@@ -66,13 +66,12 @@ src/
     autostart.js    # OS login autostart
     hash.js         # bcrypt config (aligned with Bahri-MOC-PCR)
     explorer.js, dialogs.js, log.js, pattern.js
-  ui/               # legacy vanilla fallback if web/dist is missing
 web/
   src/              # React dashboard (Vite + Tailwind + React Flow + Recharts)
   dist/             # production build (gitignored)
 test/               # node:test (seed format, sqlite seed apply, skills)
 scripts/
-  install-service.js, uninstall-service.js, ensure-ui.js, run-worker.cmd (gitignored when generated)
+  launch.js, workspace.js, build-ui.js, ensure-ui.js, install-service.js, uninstall-service.js, run-worker.cmd (gitignored when generated)
 ```
 
 ## Architecture notes
@@ -86,8 +85,9 @@ scripts/
 4c. **Import seeds** — Third explicit write path (`src/core/seeds.js`). Format `backup-service-seed-v1` (`src/core/seed-format.js`). Simulate is read-only (schema, privileges, ref graph, live key lookup). Apply can CREATE missing objects, optionally DELETE rows in listed objects (`wipe`), then INSERT in parent-first order. Confirm by typing the target database name. Audits as `kind: 'seed'`. Copyable export skills live in `src/core/seed-skills.js` (`GET /api/seeds/skills`).
 4d. **Analytics dashboards** — Read-only. User describes a view; `draftDashboard()` in `ai.js` returns widgets (kpi / bar / line / pie / table / pipeline). `dashboards.js` stores them in `data/dashboards.json` and re-runs queries through the same read-only adapters. Never execute writes from a dashboard.
 5. **Rotation** — `rotate.js` writes password **hashes** to MongoDB. The generated password and the previous generated password are stored in `data/rotation-audit.json` on this device (gitignored) so the audit page can search, filter by date, copy the latest password, and download a `.txt`. Default notify email is off unless settings enable it.
-6. **UI** — React dashboard in `web/src/` (Vite, Tailwind, Lucide, Framer Motion, `@xyflow/react`, Recharts). Surfaces are flat greys, cards are square with a dashed border, buttons are square. After API changes, update `web/src/api.js` and the relevant page/sheet. `npm run build:ui` writes `web/dist`; Express serves that as an SPA. `npm run dev` proxies `/api` from Vite `:5173` to Express `:4780`. Info (`i`) tips are `InfoTip` / `Field info=` in `web/src/components/ui.jsx`. The flow map (`web/src/pages/FlowMap.jsx`) draws backup jobs plus pinned analytics dashboards and seeds. A seed `bindings[]` entry is `{ connectionId, database }`; clicking that node opens the seed on that target. Folder and file pickers live in `src/core/dialogs.js` (`POST /api/dialogs/folder`, `POST /api/dialogs/file`).
+6. **UI** — React dashboard in `web/src/` (Vite, Tailwind, Lucide, Framer Motion, `@xyflow/react`, Recharts). Information architecture is **connection-first**: `/` lists connections; `/c/:connectionId/*` is the workspace (overview, explore, backups, analytics, seeds, flow, rotate). Old `/browse`, `/backups`, `/rotate`, `/analytics`, `/seeds`, `/flow` URLs redirect. Theme tokens (`web/src/index.css`) drive type, radius, stroke, shadow and buttons per brand — use `border-theme`, `shadow-card`, `rounded-md`, `btn`. After API changes, update `web/src/api.js` and the relevant page/sheet. `npm run build:ui` writes `web/dist`; Express serves that as an SPA. `npm run dev` proxies `/api` from Vite `:5173` to Express `:4780`. Info (`i`) tips are `InfoTip` / `Field info=` in `web/src/components/ui.jsx`. The flow map (`web/src/pages/FlowMap.jsx`) draws backup jobs plus pinned analytics dashboards and seeds. A seed `bindings[]` entry is `{ connectionId, database }`; clicking that node opens the seed on that target. Folder and file pickers live in `src/core/dialogs.js` (`POST /api/dialogs/folder`, `POST /api/dialogs/file`).
 7. **Connection privileges** — `adapter.permissions(conn, db)` on every engine. `GET /api/connections/:id/permissions`. Shown on the connection sheet (and simulation reports). Best-effort: missing GRANT visibility is a note, not a hard failure.
+8. **Connection insight** — `adapter.insight(conn, db)` plus `GET /api/connections/:id/insight`. Read-only cluster/database metadata for the connection home (version, topology, connections, collections). Samples of connection counts are stored in `data/insight-samples.json` (gitignored) so “opened in the last period” can be estimated.
 
 ## Seed format (`backup-service-seed-v1`)
 
@@ -121,7 +121,7 @@ SES sandbox only sends to verified recipients. Analytics dashboards need the ass
 - Prefer small, focused changes in `core/` modules; avoid growing `server.js` without extracting helpers when logic is reusable.
 - Match error style: throw `Error` with clear messages; HTTP layer maps via `wrap()`.
 - Tests: `npm test` (`node:test` in `test/`). Still verify UI with `npm run dev` against `127.0.0.1`.
-- Filename on Windows: entry is `src/index.js` (Unix path in docs); `start.bat` uses `src\index.js` for Windows.
+- Filename on Windows: `start.bat` runs `node scripts\launch.js start`; Unix `start.sh` does the same.
 
 ## Safety rules for agents
 
@@ -145,6 +145,7 @@ SES sandbox only sends to verified recipients. Analytics dashboards need the ass
 | Analytics dashboards | `core/ai.js` (`draftDashboard`), `core/dashboards.js`, `web/src/pages/Analytics.jsx` |
 | Assistant | `core/ai.js`, `web/src/components/AssistantSheet.jsx` |
 | Connection privileges | `adapter.permissions()`, `GET /api/connections/:id/permissions`, `ConnectionSheet.jsx` |
+| Connection home analytics | `adapter.insight()`, `core/insight.js`, `GET /api/connections/:id/insight`, `ConnectionHome.jsx` |
 | Email templates | `core/email.js` |
 | Settings / defaults | `store.js` (`settings.json`), `/api/meta` in `server.js` |
 | Boot at login | `core/autostart.js`, `scripts/install-service.js` |

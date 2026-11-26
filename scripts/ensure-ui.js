@@ -2,11 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { log, ROOT } from './workspace.js';
 
-// Build the dashboard when web/dist is missing or older than its sources,
-// so pulling new UI code and running `npm start` never serves a stale build.
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const indexFile = path.join(root, 'web', 'dist', 'index.html');
+// Build the React dashboard when web/dist is missing or older than its sources,
+// so `npm start` never serves a stale build.
+const indexFile = path.join(ROOT, 'web', 'dist', 'index.html');
 
 function newestMtime(target) {
   if (!fs.existsSync(target)) return 0;
@@ -17,15 +17,26 @@ function newestMtime(target) {
   return newest;
 }
 
-let reason = null;
-if (!fs.existsSync(indexFile)) reason = 'web/dist is missing';
-else {
-  const built = fs.statSync(indexFile).mtimeMs;
-  const sources = ['web/src', 'web/public', 'web/index.html', 'web/vite.config.js'].map((p) => newestMtime(path.join(root, p)));
-  if (Math.max(...sources) > built) reason = 'dashboard sources changed';
-}
-if (!reason) process.exit(0);
+export function ensureUi() {
+  let reason = null;
+  if (!fs.existsSync(indexFile)) reason = 'web/dist is missing';
+  else {
+    const built = fs.statSync(indexFile).mtimeMs;
+    const sources = ['web/src', 'web/public', 'web/index.html', 'web/vite.config.js'].map((p) => newestMtime(path.join(ROOT, p)));
+    if (Math.max(...sources) > built) reason = 'dashboard sources changed';
+  }
+  if (!reason) return;
 
-console.log(`Building dashboard (${reason})…`);
-const result = spawnSync('npm', ['run', 'build:ui'], { cwd: root, stdio: 'inherit', shell: true });
-process.exit(result.status ?? 1);
+  log(`Building dashboard (${reason})…`);
+  const result = spawnSync(process.execPath, [path.join('scripts', 'build-ui.js')], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  if ((result.status ?? 1) !== 0) {
+    console.error('[setup] Dashboard build failed.');
+    process.exit(result.status ?? 1);
+  }
+}
+
+const invoked = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invoked) ensureUi();

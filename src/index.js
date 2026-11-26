@@ -28,9 +28,13 @@ if (!autostartStatus().enabled) {
   }
 }
 
-try {
-  const open = (await import('open')).default;
-  await open(url);
-} catch (err) {
-  logLine(`Open browser manually: ${url} (${err.message})`);
+if (process.env.BACKUP_DEV === '1') {
+  logLine('Dev UI http://127.0.0.1:5173 (this process is the API only)');
+} else {
+  try {
+    const open = (await import('open')).default;
+    await open(url);
+  } catch (err) {
+    logLine(`Open browser manually: ${url} (${err.message})`);
+  }
 }
