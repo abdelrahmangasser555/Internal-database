@@ -3,9 +3,9 @@ import { useTheme } from '../state/Theme.jsx';
 import { cn } from '../lib/cn.js';
 
 export function EngineLogo({ engine, size = 18, tile = false, className }) {
-  const { theme } = useTheme();
+  const { scheme } = useTheme();
   const info = engineOf(engine);
-  const src = typeof info.logo === 'string' ? info.logo : info.logo[theme] || info.logo.dark;
+  const src = typeof info.logo === 'string' ? info.logo : info.logo[scheme] || info.logo.dark;
   const img = <img src={src} alt={info.label} width={size} height={size} className="block object-contain" style={{ width: size, height: size }} draggable={false} />;
   if (!tile) return <span className={cn('inline-flex shrink-0', className)}>{img}</span>;
   const box = Math.round(size * 1.85);

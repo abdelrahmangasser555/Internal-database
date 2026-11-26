@@ -88,7 +88,7 @@ function layout(graph, engine, focus) {
 }
 
 export function ErDiagram({ connectionId, db, engine, focus, onOpen, className }) {
-  const { theme } = useTheme();
+  const { scheme } = useTheme();
   const [graph, setGraph] = useState(null);
   const [error, setError] = useState(null);
 
@@ -128,7 +128,7 @@ export function ErDiagram({ connectionId, db, engine, focus, onOpen, className }
         maxZoom={1.8}
         nodesConnectable={false}
         onNodeDoubleClick={(_e, n) => onOpen?.(n.id)}
-        colorMode={theme}
+        colorMode={scheme}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="var(--line-strong)" />

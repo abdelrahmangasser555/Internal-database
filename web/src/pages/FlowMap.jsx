@@ -21,7 +21,7 @@ function FitView({ count }) {
 
 export function FlowMapPage() {
   const { connections, jobs, records, openSheet } = useApp();
-  const { theme } = useTheme();
+  const { scheme } = useTheme();
   const navigate = useNavigate();
   const [filter, setFilter] = useState('');
   const [dashboards, setDashboards] = useState([]);
@@ -163,7 +163,7 @@ export function FlowMapPage() {
             minZoom={0.3}
             maxZoom={1.6}
             nodesConnectable={false}
-            colorMode={theme}
+            colorMode={scheme}
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Cross} gap={24} size={1} color="var(--line)" />

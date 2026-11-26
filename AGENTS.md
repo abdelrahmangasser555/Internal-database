@@ -10,7 +10,7 @@ Guidance for AI coding agents working in **backup-service** (local backup schedu
 | Server | Express 5, localhost dashboard on `APP_PORT` (default **4780**) |
 | Data | JSON files under `data/` (gitignored); device-local only |
 | Platforms | Windows and Ubuntu (autostart / service scripts) |
-| Brand | Flat VS Code / Next.js greys. White is the action colour on dark (`--primary` `#f3f3f3`, text `#1e1e1e`). No background gradients. Tokens in `web/src/index.css`. UI face is Segoe UI; data is JetBrains Mono. |
+| Brand | Flat greys, no background gradients. Themes: Graphite, Ink, Slate, Paper, Sand, plus System (`data-theme` in `web/src/index.css`, picker in the header and Settings). UI face is Segoe UI; data is JetBrains Mono. |
 
 User-facing docs: `README.md`.
 

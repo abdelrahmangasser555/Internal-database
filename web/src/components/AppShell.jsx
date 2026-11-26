@@ -1,9 +1,10 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Moon, Plus, Search, Sparkles, Sun } from 'lucide-react';
+import { Plus, Search, Sparkles } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { useApp } from '../state/AppState.jsx';
 import { useTheme } from '../state/Theme.jsx';
 import { Button, Kbd, StatusDot } from './ui.jsx';
+import { ThemeMenu } from './ThemeMenu.jsx';
 import { BrandMark } from './EngineLogo.jsx';
 import { CommandPalette, openPalette } from './CommandPalette.jsx';
 import { ConnectionSheet } from './ConnectionSheet.jsx';
@@ -29,7 +30,7 @@ const TITLES = {
 
 export function AppShell() {
   const { meta, openSheet, jobs, openAssistant } = useApp();
-  const { theme, toggle } = useTheme();
+  const { scheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const running = jobs.filter((j) => j.running);
@@ -114,9 +115,7 @@ export function AppShell() {
             <Button variant="secondary" size="sm" onClick={() => openAssistant({})} title="Assistant (Ctrl J)">
               <Sparkles size={14} className="text-primary" /> <span className="hidden sm:inline">Ask</span>
             </Button>
-            <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme" title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
-              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-            </Button>
+            <ThemeMenu />
           </div>
         </header>
         <main className={cn('min-h-0 flex-1 pb-16 md:pb-0', fullBleed ? 'overflow-hidden' : 'overflow-auto')}>
@@ -149,7 +148,7 @@ export function AppShell() {
       <RestoreSheet />
       <AssistantSheet />
       <Toaster
-        theme={theme}
+        theme={scheme}
         position="bottom-right"
         toastOptions={{
           style: { background: 'var(--surface)', border: '1px solid var(--line-strong)', color: 'var(--fg)', fontSize: '13px' },

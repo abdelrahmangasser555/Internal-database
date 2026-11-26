@@ -8,52 +8,118 @@
   Colour   : flat VS Code / Next.js greys. White is the action colour. No background gradients.
   Type     : Segoe UI (the VS Code UI face on Windows) and JetBrains Mono (data, code).
   Radius   : 2px. Cards sit on a dashed 1px line.
-  Themes   : dark is the default; light mirrors every token. Set data-theme on <html>.
+  Themes   : data-theme on <html> (dark, ink, slate, light, sand). data-scheme is light or dark.
 */
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant dark (&:where([data-scheme="dark"], [data-scheme="dark"] *));
 
 :root,
 [data-theme="dark"] {
-  --bg: #1e1e1e;
-  --bg-2: #181818;
-  --surface: #252526;
-  --surface-2: #2d2d2d;
-  --surface-3: #333333;
-  --line: #3c3c3c;
-  --line-strong: #555555;
-  --fg: #d4d4d4;
-  --muted: #9d9d9d;
-  --subtle: #6e6e6e;
-  --primary: #f3f3f3;
+  --bg: #1a1a1a;
+  --bg-2: #141414;
+  --surface: #242424;
+  --surface-2: #2e2e2e;
+  --surface-3: #3a3a3a;
+  --line: #4a4a4a;
+  --line-strong: #6e6e6e;
+  --fg: #f4f4f4;
+  --muted: #c2c2c2;
+  --subtle: #9a9a9a;
+  --primary: #f7f7f7;
   --primary-strong: #ffffff;
-  --primary-fg: #1e1e1e;
+  --primary-fg: #141414;
   --ok: #3fb950;
-  --warn: #d29922;
-  --danger: #f14c4c;
-  --info: #3794ff;
+  --warn: #e3b341;
+  --danger: #ff6b6b;
+  --info: #6cb6ff;
+  --shadow: none;
+  color-scheme: dark;
+}
+
+[data-theme="ink"] {
+  --bg: #000000;
+  --bg-2: #000000;
+  --surface: #111111;
+  --surface-2: #1a1a1a;
+  --surface-3: #242424;
+  --line: #333333;
+  --line-strong: #5c5c5c;
+  --fg: #ffffff;
+  --muted: #d4d4d4;
+  --subtle: #a3a3a3;
+  --primary: #ffffff;
+  --primary-strong: #ffffff;
+  --primary-fg: #000000;
+  --ok: #4ade80;
+  --warn: #f5c451;
+  --danger: #ff7070;
+  --info: #7cc4ff;
+  --shadow: none;
+  color-scheme: dark;
+}
+
+[data-theme="slate"] {
+  --bg: #0e1520;
+  --bg-2: #0a1018;
+  --surface: #162033;
+  --surface-2: #1d2a40;
+  --surface-3: #263650;
+  --line: #31445f;
+  --line-strong: #5b7eab;
+  --fg: #f4f8ff;
+  --muted: #c9d7ee;
+  --subtle: #93a9c9;
+  --primary: #f4f8ff;
+  --primary-strong: #ffffff;
+  --primary-fg: #0e1520;
+  --ok: #4ade80;
+  --warn: #f5c451;
+  --danger: #ff8080;
+  --info: #8ec5ff;
   --shadow: none;
   color-scheme: dark;
 }
 
 [data-theme="light"] {
   --bg: #f3f3f3;
-  --bg-2: #ececec;
+  --bg-2: #e8e8e8;
   --surface: #ffffff;
   --surface-2: #f6f6f6;
-  --surface-3: #ebebeb;
-  --line: #d4d4d4;
-  --line-strong: #bdbdbd;
-  --fg: #1e1e1e;
-  --muted: #616161;
-  --subtle: #8a8a8a;
-  --primary: #1e1e1e;
-  --primary-strong: #333333;
+  --surface-3: #e7e7e7;
+  --line: #c8c8c8;
+  --line-strong: #8f8f8f;
+  --fg: #111111;
+  --muted: #3d3d3d;
+  --subtle: #6b6b6b;
+  --primary: #111111;
+  --primary-strong: #000000;
   --primary-fg: #ffffff;
   --ok: #1a7f37;
   --warn: #9a6700;
   --danger: #cf222e;
   --info: #0969da;
+  --shadow: none;
+  color-scheme: light;
+}
+
+[data-theme="sand"] {
+  --bg: #f3eee4;
+  --bg-2: #e7dfd1;
+  --surface: #fffdf8;
+  --surface-2: #f7f1e6;
+  --surface-3: #efe4d2;
+  --line: #d5c8b2;
+  --line-strong: #a89274;
+  --fg: #1c1612;
+  --muted: #4e4338;
+  --subtle: #7a6b58;
+  --primary: #1c1612;
+  --primary-strong: #000000;
+  --primary-fg: #fffdf8;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --danger: #b42318;
+  --info: #0b5cab;
   --shadow: none;
   color-scheme: light;
 }
